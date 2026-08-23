@@ -31,7 +31,11 @@ let thumbnails = null;
 let videoList = null;
 let currentDirectory = "";
 
-const player = new VideoPlayer();
+const player = new VideoPlayer({
+  // The video source is released before onClose runs, so preview connections
+  // can safely resume without competing with playback.
+  onClose: () => thumbnails?.resume(),
+});
 
 /** Update the status pill shown above the video grid. */
 function setStatus(message, state = "ready") {
@@ -91,9 +95,9 @@ function showDirectory(relativePath = "", options = {}) {
   if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-/** Create a fresh renderer and a two-worker lazy thumbnail queue. */
+/** Create a fresh renderer and a Worker queue capped at four preview requests. */
 function createVideoList() {
-  thumbnails = new ThumbnailGenerator({ concurrency: 2 });
+  thumbnails = new ThumbnailGenerator({ concurrency: 4 });
   videoList = new VideoList({
     container: elements.grid,
     emptyState: elements.emptyState,
@@ -101,7 +105,10 @@ function createVideoList() {
     emptyMessage: elements.emptyMessage,
     retryButton: elements.retryButton,
     thumbnailGenerator: thumbnails,
-    onPlay: (item, trigger) => player.open(item, trigger),
+    onPlay: (item, trigger) => {
+      thumbnails?.pause();
+      player.open(item, trigger);
+    },
     onOpenDirectory: (directory) => {
       showDirectory(directory.relativePath);
     },

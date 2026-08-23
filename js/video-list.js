@@ -1,4 +1,4 @@
-/** Renders, filters and lazily hydrates the YouTube-style video grid. */
+/** Renders, filters and asynchronously hydrates the YouTube-style video grid. */
 
 import { displayTitle, formatTime } from "./utils.js";
 
@@ -13,11 +13,11 @@ function createIcon(iconName) {
 
 /**
  * Owns the mixed folder/video card grid, text filtering, directory scoping, and
- * lazy thumbnail hydration.
+ * Worker-queued thumbnail hydration.
  *
  * Usage: create one instance per scan, call `render(videos, directories)`, then
- * call `setDirectoryScope("A001")` as the user navigates. Call `destroy()`
- * before replacing the instance so its IntersectionObserver is disconnected.
+ * call `setDirectoryScope("A001")` as the user navigates. All video cards are
+ * submitted at render time; the Worker limits actual decoding concurrency.
  */
 export class VideoList {
   constructor({
@@ -43,15 +43,11 @@ export class VideoList {
     this.cards = new Map();
     this.filterText = "";
     this.scopePath = "";
-
-    this.observer = "IntersectionObserver" in window
-      ? new IntersectionObserver((entries) => this.handleIntersections(entries), { rootMargin: "500px 0px" })
-      : null;
   }
 
-  /** Replace all cards; folders render first and videos receive lazy observers. */
+  /** Replace all cards, prioritize the current folder, then hydrate every preview. */
   render(items, directories = []) {
-    this.observer?.disconnect();
+    this.releaseObjectUrls();
     this.container.replaceChildren();
     this.cards.clear();
     this.items = items;
@@ -68,12 +64,17 @@ export class VideoList {
       const card = this.createCard(item);
       this.container.append(card.element);
       this.cards.set(item.url, card);
-
-      if (this.observer) this.observer.observe(card.element);
-      else this.loadThumbnail(item);
     }
 
+    this.updateThumbnailPriority();
+    this.hydrateAll(items);
     this.applyFilter();
+  }
+
+  /** Cache-check all cards in parallel and seal the Worker after all work settles. */
+  async hydrateAll(items) {
+    await Promise.allSettled(items.map((item) => this.loadThumbnail(item)));
+    this.thumbnailGenerator.seal();
   }
 
   /** Build a 16:9 folder card that enters the supplied relative directory. */
@@ -150,16 +151,6 @@ export class VideoList {
     return { element, image, thumbnailWrap, duration, requested: false };
   }
 
-  /** Ask the decoding queue for thumbnails only when cards approach the viewport. */
-  handleIntersections(entries) {
-    for (const entry of entries) {
-      if (!entry.isIntersecting) continue;
-      this.observer.unobserve(entry.target);
-      const item = this.items.find((candidate) => this.cards.get(candidate.url)?.element === entry.target);
-      if (item) this.loadThumbnail(item);
-    }
-  }
-
   /** Hydrate a single card and gracefully keep the placeholder on decode failure. */
   async loadThumbnail(item) {
     const card = this.cards.get(item.url);
@@ -167,7 +158,11 @@ export class VideoList {
     card.requested = true;
 
     try {
-      const result = await this.thumbnailGenerator.enqueue(item.url);
+      let result = await this.thumbnailGenerator.getCached(item.url);
+      if (!result) {
+        result = await this.thumbnailGenerator.enqueue(item.url);
+        this.thumbnailGenerator.cacheResult(item.url, result);
+      }
       if (this.cards.get(item.url) !== card) return;
       item.duration = result.duration;
       card.duration.textContent = formatTime(result.duration);
@@ -175,7 +170,8 @@ export class VideoList {
         card.image.classList.add("is-ready");
         card.thumbnailWrap.classList.add("has-image");
       }, { once: true });
-      card.image.src = result.dataUrl;
+      card.objectUrl = URL.createObjectURL(result.blob);
+      card.image.src = card.objectUrl;
     } catch (error) {
       if (error.name !== "AbortError" && this.cards.get(item.url) === card) {
         card.thumbnailWrap.classList.add("has-error");
@@ -197,7 +193,19 @@ export class VideoList {
    */
   setDirectoryScope(relativePath = "") {
     this.scopePath = relativePath.replace(/^\/+|\/+$/g, "");
+    this.updateThumbnailPriority();
     this.applyFilter();
+  }
+
+  /** Tell the Worker which directly visible video URLs should occupy its slots first. */
+  updateThumbnailPriority() {
+    const urls = this.items
+      .filter((item) => {
+        const parentPath = item.directory === "当前目录" ? "" : item.directory;
+        return parentPath === this.scopePath;
+      })
+      .map((item) => item.url);
+    this.thumbnailGenerator.prioritize(urls);
   }
 
   /** Recompute visibility by combining directory scope and free-text search. */
@@ -253,9 +261,16 @@ export class VideoList {
     this.retryButton.hidden = false;
   }
 
-  /** Disconnect browser observers before a new scan creates another list. */
+  /** Drop card references before a new scan replaces the list and queue. */
   destroy() {
-    this.observer?.disconnect();
+    this.releaseObjectUrls();
     this.cards.clear();
+  }
+
+  /** Release Blob URLs created from IndexedDB/generated JPEG data. */
+  releaseObjectUrls() {
+    for (const card of this.cards.values()) {
+      if (card.objectUrl) URL.revokeObjectURL(card.objectUrl);
+    }
   }
 }
