@@ -10,6 +10,10 @@ import { scanVideoDirectory } from "./directory-scanner.js";
 import { ThumbnailGenerator } from "./thumbnail-generator.js";
 import { VideoList } from "./video-list.js";
 import { VideoPlayer } from "./player.js";
+import { initializeLanguage, t, toggleLanguage } from "./i18n.js";
+
+// Apply the saved preference before controllers render their first UI state.
+initializeLanguage();
 
 const elements = {
   grid: document.getElementById("videoGrid"),
@@ -18,6 +22,7 @@ const elements = {
   emptyMessage: document.getElementById("emptyMessage"),
   retryButton: document.getElementById("emptyRetryButton"),
   refreshButton: document.getElementById("refreshButton"),
+  languageToggle: document.getElementById("languageToggle"),
   search: document.getElementById("videoSearch"),
   status: document.getElementById("scanStatus"),
   directoryLabel: document.getElementById("directoryLabel"),
@@ -30,6 +35,8 @@ let scanController = null;
 let thumbnails = null;
 let videoList = null;
 let currentDirectory = "";
+let currentStatus = { key: "scanningEllipsis", values: {}, state: "scanning" };
+let currentScanError = null;
 
 const player = new VideoPlayer({
   // The video source is released before onClose runs, so preview connections
@@ -37,11 +44,22 @@ const player = new VideoPlayer({
   onClose: () => thumbnails?.resume(),
 });
 
-/** Update the status pill shown above the video grid. */
-function setStatus(message, state = "ready") {
-  elements.status.querySelector("span:last-child").textContent = message;
+/** Store and render the status pill so it can be translated without rescanning. */
+function setStatus(key, state = "ready", values = {}) {
+  currentStatus = { key, state, values };
+  elements.status.querySelector("span:last-child").textContent = t(key, values);
   elements.status.classList.toggle("is-scanning", state === "scanning");
   elements.status.classList.toggle("is-error", state === "error");
+}
+
+/** Refresh path affordances whose wording depends on the selected language. */
+function updateDirectoryLabel() {
+  elements.directoryLabel.title = currentDirectory ? t("goUp") : t("currentRoot");
+}
+
+function localizedScanError(error) {
+  const message = error?.i18nKey ? t(error.i18nKey, error.i18nValues) : error?.message;
+  return t("serverReadHint", { message: message || t("scanFailed") });
 }
 
 /**
@@ -87,7 +105,7 @@ function showDirectory(relativePath = "", options = {}) {
   currentDirectory = normalizeDirectoryPath(relativePath);
   elements.directoryLabelText.textContent = currentDirectory ? `/${currentDirectory}` : "/";
   elements.directoryLabel.disabled = !currentDirectory;
-  elements.directoryLabel.title = currentDirectory ? "返回上一级目录" : "当前根目录";
+  updateDirectoryLabel();
   elements.search.value = "";
   videoList?.setFilter("");
   videoList?.setDirectoryScope(currentDirectory);
@@ -130,7 +148,8 @@ async function loadLibrary() {
   elements.emptyState.hidden = true;
   elements.refreshButton.classList.add("is-spinning");
   elements.refreshButton.disabled = true;
-  setStatus("正在扫描目录…", "scanning");
+  currentScanError = null;
+  setStatus("scanningDirectory", "scanning");
 
   try {
     const result = await scanVideoDirectory(rootUrl, {
@@ -138,7 +157,7 @@ async function loadLibrary() {
       maxDepth: 3,
       signal: scanController.signal,
       onProgress: ({ directories, videos }) => {
-        setStatus(`已查看 ${directories} 个目录 · 找到 ${videos} 个视频`, "scanning");
+        setStatus("scanProgress", "scanning", { directories, videos });
       },
     });
 
@@ -148,12 +167,16 @@ async function loadLibrary() {
     }
     videoList.setDirectoryScope(currentDirectory);
     videoList.setFilter(elements.search.value);
-    const failedSuffix = result.failedDirectories > 0 ? ` · ${result.failedDirectories} 个目录无法读取` : "";
-    setStatus(`${result.videos.length} 个视频 · ${result.directories.length} 个文件夹${failedSuffix}`);
+    setStatus("scanComplete", "ready", {
+      videos: result.videos.length,
+      folders: result.directories.length,
+      failed: result.failedDirectories,
+    });
   } catch (error) {
     if (error.name === "AbortError") return;
-    videoList.showError(`${error.message}。请确认是通过当前 http-server 打开此页面。`);
-    setStatus("扫描失败", "error");
+    currentScanError = error;
+    videoList.showError(localizedScanError(error));
+    setStatus("scanFailed", "error");
   } finally {
     if (!scanController.signal.aborted) {
       elements.refreshButton.classList.remove("is-spinning");
@@ -163,6 +186,7 @@ async function loadLibrary() {
 }
 
 elements.search.addEventListener("input", () => videoList?.setFilter(elements.search.value));
+elements.languageToggle.addEventListener("click", toggleLanguage);
 elements.directoryLabel.addEventListener("click", () => {
   const parts = currentDirectory.split("/").filter(Boolean);
   parts.pop();
@@ -176,6 +200,13 @@ window.addEventListener("popstate", () => {
 window.addEventListener("beforeunload", () => {
   scanController?.abort();
   thumbnails?.dispose();
+});
+window.addEventListener("languagechange", () => {
+  updateDirectoryLabel();
+  setStatus(currentStatus.key, currentStatus.state, currentStatus.values);
+  videoList?.updateLanguage();
+  player.updateLanguage();
+  if (currentScanError) videoList?.showError(localizedScanError(currentScanError));
 });
 
 showDirectory(readDirectoryFromAddress(), { historyMode: "replace", scroll: false });

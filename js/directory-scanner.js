@@ -4,6 +4,7 @@
  */
 
 import { decodeUrlPath } from "./utils.js";
+import { t } from "./i18n.js";
 
 const IGNORED_DIRECTORIES = new Set([
   ".git",
@@ -96,7 +97,10 @@ export async function scanVideoDirectory(startUrl, options = {}) {
     } catch (error) {
       if (error.name === "AbortError") throw error;
       if (entry.depth === 0) {
-        throw new Error(`无法读取目录索引（${error.message}）`);
+        const scanError = new Error(t("directoryIndexError", { message: error.message }));
+        scanError.i18nKey = "directoryIndexError";
+        scanError.i18nValues = { message: error.message };
+        throw scanError;
       }
       failedDirectories += 1;
       continue;
@@ -150,7 +154,7 @@ export async function scanVideoDirectory(startUrl, options = {}) {
           url: normalizedDirectory.href,
           name: directoryName,
           relativePath: path,
-          parent: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "当前目录",
+          parent: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
         });
 
         if (recursive) {
@@ -166,7 +170,7 @@ export async function scanVideoDirectory(startUrl, options = {}) {
         url: target.href,
         fileName,
         relativePath: path,
-        directory: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "当前目录",
+        directory: path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "",
       });
     }
 

@@ -1,5 +1,5 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="en">
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
@@ -31,61 +31,68 @@
     <div class="app-shell">
       <!-- 固定顶部栏：品牌、客户端搜索和手动重新扫描入口。 -->
       <header class="topbar">
-        <a class="brand" href="./videolist.html" aria-label="返回视频库顶部">
+        <a class="brand" href="./videolist.html" aria-label="Return to the video library" data-i18n-aria-label="brandHomeLabel">
           <span class="brand-mark"><span></span></span>
           <span class="brand-name">LOCAL<span>VIDEO</span></span>
         </a>
 
         <label class="search-box" for="videoSearch">
           <svg aria-hidden="true"><use href="#icon-search"></use></svg>
-          <input id="videoSearch" type="search" placeholder="搜索本地视频" autocomplete="off">
+          <input id="videoSearch" type="search" placeholder="Search local videos" data-i18n-placeholder="searchPlaceholder" autocomplete="off">
         </label>
 
-        <button class="icon-button refresh-button" id="refreshButton" type="button" aria-label="重新扫描目录" title="重新扫描目录">
-          <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
-        </button>
+        <!-- Language preference sits beside refresh and is restored from LocalStorage. -->
+        <div class="topbar-actions">
+          <button class="language-toggle" id="languageToggle" type="button" aria-label="Switch language to Chinese" title="Switch language to Chinese" data-current-language="en">
+            <span class="language-option language-option-en" lang="en">EN</span>
+            <span class="language-option language-option-zh" lang="zh-CN">ZH</span>
+          </button>
+          <button class="icon-button refresh-button" id="refreshButton" type="button" aria-label="Rescan folders" title="Rescan folders" data-i18n-aria-label="refreshDirectory" data-i18n-title="refreshDirectory">
+            <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+          </button>
+        </div>
       </header>
 
       <main id="libraryView" class="library-view">
         <!-- 当前虚拟目录路径与目录扫描状态；路径按钮点击后返回上一级。 -->
-        <section class="library-heading" aria-label="目录位置与扫描状态">
-          <button id="directoryLabel" class="directory-label" type="button" title="返回上一级目录">
+        <section class="library-heading" aria-label="Folder location and scan status" data-i18n-aria-label="locationAndStatus">
+          <button id="directoryLabel" class="directory-label" type="button" title="Go to parent folder" data-i18n-title="goUp">
             <svg aria-hidden="true"><use href="#icon-folder"></use></svg>
             <span id="directoryLabelText">/</span>
           </button>
           <div id="scanStatus" class="scan-status" role="status" aria-live="polite">
             <span class="status-dot"></span>
-            <span>正在扫描…</span>
+            <span data-i18n="scanningEllipsis">Scanning…</span>
           </div>
         </section>
 
-        <section aria-label="本地视频">
+        <section aria-label="Local videos" data-i18n-aria-label="localVideos">
           <!-- JS 将文件夹卡片和视频卡片动态插入此网格。 -->
           <div id="videoGrid" class="video-grid" aria-live="polite"></div>
 
           <!-- 无视频、无搜索结果或扫描失败时共用的状态区域。 -->
           <div id="emptyState" class="empty-state" hidden>
             <span class="empty-icon"><svg aria-hidden="true"><use href="#icon-video"></use></svg></span>
-            <h2 id="emptyTitle">没有找到 MP4 视频</h2>
-            <p id="emptyMessage">把视频放进当前目录或子目录，然后重新扫描。</p>
-            <button id="emptyRetryButton" class="secondary-button" type="button">重新扫描</button>
+            <h2 id="emptyTitle" data-i18n="noVideosTitle">No MP4 videos found</h2>
+            <p id="emptyMessage" data-i18n="noVideosMessage">Add videos to this folder or a subfolder, then rescan.</p>
+            <button id="emptyRetryButton" class="secondary-button" type="button" data-i18n="rescan">Rescan</button>
           </div>
         </section>
       </main>
     </div>
 
     <!-- 全屏式播放器视图；默认隐藏，点击视频卡片后由 player.js 打开。 -->
-    <section id="playerView" class="player-view" aria-label="视频播放器" aria-hidden="true" hidden>
+    <section id="playerView" class="player-view" aria-label="Video player" data-i18n-aria-label="videoPlayer" aria-hidden="true" hidden>
       <header class="player-header">
-        <button id="backButton" class="icon-button player-back" type="button" aria-label="返回视频列表">
+        <button id="backButton" class="icon-button player-back" type="button" aria-label="Back to video list" data-i18n-aria-label="backToList">
           <svg aria-hidden="true"><use href="#icon-back"></use></svg>
         </button>
         <div class="player-heading-copy">
-          <p>NOW PLAYING</p>
-          <h2 id="playerTitle">视频</h2>
+          <p data-i18n="nowPlaying">NOW PLAYING</p>
+          <h2 id="playerTitle">Video</h2>
         </div>
         <!-- 只镜像视频画面；本次播放期间进入或退出全屏都会保留状态。 -->
-        <button id="mirrorButton" class="icon-button player-mirror" type="button" aria-label="左右镜像视频" aria-pressed="false" title="左右镜像视频">
+        <button id="mirrorButton" class="icon-button player-mirror" type="button" aria-label="Mirror video horizontally" aria-pressed="false" title="Mirror video horizontally">
           <svg aria-hidden="true"><use href="#icon-mirror"></use></svg>
         </button>
       </header>
@@ -103,39 +110,39 @@
         <div class="gesture-zone gesture-zone-right" data-seek-direction="forward" aria-hidden="true"></div>
 
         <div id="seekFeedbackBack" class="seek-feedback seek-feedback-left" aria-hidden="true">
-          <span>−10</span><small>秒</small>
+          <span>−10</span><small data-i18n="secondsShort">sec</small>
         </div>
         <div id="seekFeedbackForward" class="seek-feedback seek-feedback-right" aria-hidden="true">
-          <span>+10</span><small>秒</small>
+          <span>+10</span><small data-i18n="secondsShort">sec</small>
         </div>
 
-        <button id="centerPlayButton" class="center-play" type="button" aria-label="播放">
+        <button id="centerPlayButton" class="center-play" type="button" aria-label="Play">
           <svg aria-hidden="true"><use href="#icon-play"></use></svg>
         </button>
 
-        <div id="playerSpinner" class="player-spinner" aria-label="正在加载" hidden></div>
+        <div id="playerSpinner" class="player-spinner" aria-label="Loading" data-i18n-aria-label="loading" hidden></div>
         <p id="playerNotice" class="player-notice" role="status" hidden></p>
 
-        <button id="floatingExitFullscreen" class="floating-exit-fullscreen" type="button" aria-label="退出全屏" hidden>
+        <button id="floatingExitFullscreen" class="floating-exit-fullscreen" type="button" aria-label="Exit fullscreen" data-i18n-aria-label="exitFullscreen" hidden>
           <svg aria-hidden="true"><use href="#icon-fullscreen-exit"></use></svg>
-          <span>退出全屏</span>
+          <span data-i18n="exitFullscreen">Exit fullscreen</span>
         </button>
 
         <div id="fullscreenGestureHint" class="fullscreen-gesture-hint" aria-hidden="true">
           <span class="three-finger-mark"><i></i><i></i><i></i></span>
-          <span>三指下滑退出全屏</span>
+          <span data-i18n="threeFingerExit">Swipe down with three fingers to exit fullscreen</span>
           <svg><use href="#icon-chevron-down"></use></svg>
         </div>
 
           <!-- 自定义播放控制：时间轴、播放、时间、音量和全屏。 -->
           <div class="player-controls" id="playerControls">
           <label class="timeline-wrap" for="timeline">
-            <span class="sr-only">视频进度</span>
+            <span class="sr-only" data-i18n="videoProgress">Video progress</span>
             <input id="timeline" class="timeline" type="range" min="0" max="1000" value="0" step="1">
           </label>
 
           <div class="control-row">
-            <button id="playPauseButton" class="control-button" type="button" aria-label="播放">
+            <button id="playPauseButton" class="control-button" type="button" aria-label="Play">
               <svg aria-hidden="true"><use href="#icon-play"></use></svg>
             </button>
             <span id="timeDisplay" class="time-display">0:00 / 0:00</span>
@@ -143,14 +150,14 @@
             <div class="control-spacer"></div>
 
             <div class="volume-control">
-              <button id="muteButton" class="control-button" type="button" aria-label="静音">
+              <button id="muteButton" class="control-button" type="button" aria-label="Mute">
                 <svg aria-hidden="true"><use href="#icon-volume"></use></svg>
               </button>
-              <label for="volumeSlider" class="sr-only">音量</label>
+              <label for="volumeSlider" class="sr-only" data-i18n="volume">Volume</label>
               <input id="volumeSlider" class="volume-slider" type="range" min="0" max="1" value="1" step="0.05">
             </div>
 
-            <button id="fullscreenButton" class="control-button" type="button" aria-label="进入全屏">
+            <button id="fullscreenButton" class="control-button" type="button" aria-label="Enter fullscreen">
               <svg aria-hidden="true"><use href="#icon-fullscreen"></use></svg>
             </button>
           </div>
@@ -158,12 +165,12 @@
         </div>
       </div>
 
-      <p class="player-help">双击 / 双点左、右侧可后退或快进 10 秒</p>
+      <p class="player-help" data-i18n="playerHelp">Double-click / double-tap the left or right side to seek back or forward 10 seconds</p>
     </section>
 
     <!-- JavaScript 被禁用时给出可见提示。 -->
     <noscript>
-      <div class="no-script">这个页面需要 JavaScript 才能读取目录并生成视频预览。</div>
+      <div class="no-script">JavaScript is required to read folders and generate video previews.</div>
     </noscript>
 
     <script type="module" src="./js/app.js"></script>

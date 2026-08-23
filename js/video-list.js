@@ -1,6 +1,7 @@
 /** Renders, filters and asynchronously hydrates the YouTube-style video grid. */
 
 import { displayTitle, formatTime } from "./utils.js";
+import { t } from "./i18n.js";
 
 function createIcon(iconName) {
   const svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
@@ -85,7 +86,7 @@ export class VideoList {
     const button = document.createElement("button");
     button.className = "video-card-button";
     button.type = "button";
-    button.setAttribute("aria-label", `打开文件夹 ${directory.relativePath}`);
+    button.setAttribute("aria-label", t("openFolder", { path: directory.relativePath }));
 
     const thumbnail = document.createElement("div");
     thumbnail.className = "thumbnail-wrap folder-thumbnail";
@@ -94,20 +95,20 @@ export class VideoList {
     folderVisual.append(createIcon("folder"));
     const typeLabel = document.createElement("span");
     typeLabel.className = "folder-type-label";
-    typeLabel.textContent = "FOLDER";
+    typeLabel.textContent = t("folderType");
     const title = document.createElement("h2");
     title.className = "thumbnail-title";
     title.textContent = directory.name;
     title.title = directory.relativePath;
     const count = document.createElement("span");
     count.className = "duration-badge folder-count";
-    count.textContent = `${directory.videoCount} 个视频`;
+    count.textContent = t("folderVideoCount", { count: directory.videoCount });
     thumbnail.append(folderVisual, typeLabel, title, count);
 
     button.append(thumbnail);
     button.addEventListener("click", () => this.onOpenDirectory?.(directory, button));
     element.append(button);
-    return { element };
+    return { element, button, typeLabel, count };
   }
 
   /** Build one video card; its actual frame image is populated only when near view. */
@@ -118,7 +119,7 @@ export class VideoList {
     const button = document.createElement("button");
     button.className = "video-card-button";
     button.type = "button";
-    button.setAttribute("aria-label", `播放 ${item.title}`);
+    button.setAttribute("aria-label", t("playVideo", { title: item.title }));
 
     const thumbnailWrap = document.createElement("div");
     thumbnailWrap.className = "thumbnail-wrap";
@@ -148,7 +149,7 @@ export class VideoList {
     button.addEventListener("click", () => this.onPlay(item, button));
     element.append(button);
 
-    return { element, image, thumbnailWrap, duration, requested: false };
+    return { element, button, image, thumbnailWrap, duration, requested: false };
   }
 
   /** Hydrate a single card and gracefully keep the placeholder on decode failure. */
@@ -201,8 +202,7 @@ export class VideoList {
   updateThumbnailPriority() {
     const urls = this.items
       .filter((item) => {
-        const parentPath = item.directory === "当前目录" ? "" : item.directory;
-        return parentPath === this.scopePath;
+        return item.directory === this.scopePath;
       })
       .map((item) => item.url);
     this.thumbnailGenerator.prioritize(urls);
@@ -213,8 +213,7 @@ export class VideoList {
     let visible = 0;
 
     for (const directory of this.directories) {
-      const parentPath = directory.parent === "当前目录" ? "" : directory.parent;
-      const isInsideScope = parentPath === this.scopePath;
+      const isInsideScope = directory.parent === this.scopePath;
       const matchesSearch = !this.filterText ||
         `${directory.name} ${directory.relativePath}`.toLocaleLowerCase().includes(this.filterText);
       const matches = isInsideScope && matchesSearch;
@@ -224,8 +223,7 @@ export class VideoList {
     }
 
     for (const item of this.items) {
-      const parentPath = item.directory === "当前目录" ? "" : item.directory;
-      const isInsideScope = parentPath === this.scopePath;
+      const isInsideScope = item.directory === this.scopePath;
       const matchesSearch = !this.filterText ||
         `${item.title} ${item.relativePath}`.toLocaleLowerCase().includes(this.filterText);
       const matches = isInsideScope && matchesSearch;
@@ -238,25 +236,40 @@ export class VideoList {
     this.emptyState.hidden = visible !== 0;
 
     if (this.items.length + this.directories.length === 0) {
-      this.emptyTitle.textContent = "没有找到 MP4 视频";
-      this.emptyMessage.textContent = "把视频放进当前目录或子目录，然后重新扫描。";
+      this.emptyTitle.textContent = t("noVideosTitle");
+      this.emptyMessage.textContent = t("noVideosMessage");
       this.retryButton.hidden = false;
     } else if (visible === 0 && this.filterText) {
-      this.emptyTitle.textContent = "没有匹配的视频";
-      this.emptyMessage.textContent = "换一个关键词试试。";
+      this.emptyTitle.textContent = t("noMatchesTitle");
+      this.emptyMessage.textContent = t("noMatchesMessage");
       this.retryButton.hidden = true;
     } else if (visible === 0) {
-      this.emptyTitle.textContent = "这个文件夹是空的";
-      this.emptyMessage.textContent = "当前文件夹没有直属视频或子文件夹。";
+      this.emptyTitle.textContent = t("emptyFolderTitle");
+      this.emptyMessage.textContent = t("emptyFolderMessage");
       this.retryButton.hidden = false;
     }
+  }
+
+  /** Refresh dynamic card labels and empty-state copy after a language toggle. */
+  updateLanguage() {
+    for (const directory of this.directories) {
+      const card = this.cards.get(directory.url);
+      if (!card) continue;
+      card.button.setAttribute("aria-label", t("openFolder", { path: directory.relativePath }));
+      card.typeLabel.textContent = t("folderType");
+      card.count.textContent = t("folderVideoCount", { count: directory.videoCount });
+    }
+    for (const item of this.items) {
+      this.cards.get(item.url)?.button.setAttribute("aria-label", t("playVideo", { title: item.title }));
+    }
+    this.applyFilter();
   }
 
   /** Replace the grid with the shared error state. */
   showError(message) {
     this.container.hidden = true;
     this.emptyState.hidden = false;
-    this.emptyTitle.textContent = "目录读取失败";
+    this.emptyTitle.textContent = t("directoryReadFailed");
     this.emptyMessage.textContent = message;
     this.retryButton.hidden = false;
   }

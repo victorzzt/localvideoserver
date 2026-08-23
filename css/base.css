@@ -211,8 +211,47 @@ input:focus-visible {
   fill: currentColor;
 }
 
-.refresh-button {
+/* Right-side language preference and refresh action share one visual group. */
+.topbar-actions {
+  display: flex;
+  align-items: center;
   justify-self: end;
+  gap: 5px;
+}
+
+.language-toggle {
+  display: inline-grid;
+  width: 70px;
+  height: 34px;
+  grid-template-columns: 1fr 1fr;
+  align-items: stretch;
+  padding: 3px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.025);
+  color: var(--faint);
+  cursor: pointer;
+}
+
+.language-toggle:hover {
+  border-color: var(--line-strong);
+  background: rgba(255, 255, 255, 0.045);
+}
+
+.language-option {
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  font-size: 0.61rem;
+  font-weight: 720;
+  letter-spacing: 0.06em;
+  transition: color 160ms ease, background 160ms ease;
+}
+
+.language-toggle[data-current-language="en"] .language-option-en,
+.language-toggle[data-current-language="zh"] .language-option-zh {
+  background: rgba(255, 255, 255, 0.12);
+  color: var(--text);
 }
 
 .refresh-button.is-spinning svg {

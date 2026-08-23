@@ -1,8 +1,9 @@
 /** Custom video player: controls, double-tap seeking and fullscreen gestures. */
 
 import { formatTime, setButtonIcon } from "./utils.js";
+import { t } from "./i18n.js";
 
-const $ = (id) => document.getElementById(id);
+const getById = (id) => document.getElementById(id);
 
 /**
  * Custom player controller for one shared `<video>` element.
@@ -15,24 +16,24 @@ const $ = (id) => document.getElementById(id);
 export class VideoPlayer {
   constructor({ onClose } = {}) {
     this.onClose = onClose;
-    this.view = $("playerView");
-    this.shell = $("playerShell");
-    this.video = $("videoPlayer");
-    this.title = $("playerTitle");
-    this.backButton = $("backButton");
-    this.mirrorButton = $("mirrorButton");
-    this.centerPlayButton = $("centerPlayButton");
-    this.playPauseButton = $("playPauseButton");
-    this.muteButton = $("muteButton");
-    this.fullscreenButton = $("fullscreenButton");
-    this.floatingExit = $("floatingExitFullscreen");
-    this.timeline = $("timeline");
-    this.volumeSlider = $("volumeSlider");
-    this.timeDisplay = $("timeDisplay");
-    this.spinner = $("playerSpinner");
-    this.notice = $("playerNotice");
-    this.gestureHint = $("fullscreenGestureHint");
-    this.rotationSurface = $("playerRotationSurface");
+    this.view = getById("playerView");
+    this.shell = getById("playerShell");
+    this.video = getById("videoPlayer");
+    this.title = getById("playerTitle");
+    this.backButton = getById("backButton");
+    this.mirrorButton = getById("mirrorButton");
+    this.centerPlayButton = getById("centerPlayButton");
+    this.playPauseButton = getById("playPauseButton");
+    this.muteButton = getById("muteButton");
+    this.fullscreenButton = getById("fullscreenButton");
+    this.floatingExit = getById("floatingExitFullscreen");
+    this.timeline = getById("timeline");
+    this.volumeSlider = getById("volumeSlider");
+    this.timeDisplay = getById("timeDisplay");
+    this.spinner = getById("playerSpinner");
+    this.notice = getById("playerNotice");
+    this.gestureHint = getById("fullscreenGestureHint");
+    this.rotationSurface = getById("playerRotationSurface");
     this.active = false;
     this.lastTrigger = null;
     this.lastTap = { side: null, time: 0 };
@@ -85,7 +86,7 @@ export class VideoPlayer {
     this.video.addEventListener("playing", () => { this.spinner.hidden = true; });
     this.video.addEventListener("canplay", () => { this.spinner.hidden = true; });
     this.video.addEventListener("seeked", () => { this.spinner.hidden = true; });
-    this.video.addEventListener("error", () => this.showNotice("这个视频无法播放，可能是编码格式不受浏览器支持。"));
+    this.video.addEventListener("error", () => this.showNotice(t("videoPlaybackError")));
 
     this.shell.addEventListener("mousemove", () => this.showControls());
     this.shell.addEventListener("mouseleave", () => {
@@ -176,7 +177,7 @@ export class VideoPlayer {
   togglePlayback() {
     if (this.video.paused || this.video.ended) {
       if (this.video.ended) this.video.currentTime = 0;
-      this.video.play().catch(() => this.showNotice("浏览器阻止了自动播放，请再点一次播放。"));
+      this.video.play().catch(() => this.showNotice(t("autoplayBlocked")));
     } else {
       this.video.pause();
     }
@@ -191,7 +192,7 @@ export class VideoPlayer {
     this.isMirrored = Boolean(mirrored);
     this.shell.classList.toggle("is-mirrored", this.isMirrored);
     this.mirrorButton.setAttribute("aria-pressed", String(this.isMirrored));
-    const label = this.isMirrored ? "取消左右镜像" : "左右镜像视频";
+    const label = t(this.isMirrored ? "unmirrorVideo" : "mirrorVideo");
     this.mirrorButton.setAttribute("aria-label", label);
     this.mirrorButton.title = label;
   }
@@ -201,7 +202,7 @@ export class VideoPlayer {
     this.shell.classList.toggle("is-paused", paused);
     setButtonIcon(this.playPauseButton, paused ? "play" : "pause");
     setButtonIcon(this.centerPlayButton, paused ? "play" : "pause");
-    const label = paused ? "播放" : "暂停";
+    const label = t(paused ? "play" : "pause");
     this.playPauseButton.setAttribute("aria-label", label);
     this.centerPlayButton.setAttribute("aria-label", label);
     if (paused) this.showControls();
@@ -216,7 +217,10 @@ export class VideoPlayer {
     this.timeline.value = String(Math.round(ratio * 1000));
     this.timeline.style.setProperty("--played", `${ratio * 100}%`);
     this.timeDisplay.textContent = `${formatTime(current)} / ${formatTime(duration)}`;
-    this.timeline.setAttribute("aria-valuetext", `${formatTime(current)}，总时长 ${formatTime(duration)}`);
+    this.timeline.setAttribute("aria-valuetext", t("timelineValue", {
+      current: formatTime(current),
+      duration: formatTime(duration),
+    }));
     this.updateBufferedUi();
   }
 
@@ -239,7 +243,7 @@ export class VideoPlayer {
   updateVolumeUi() {
     const muted = this.video.muted || this.video.volume === 0;
     setButtonIcon(this.muteButton, muted ? "muted" : "volume");
-    this.muteButton.setAttribute("aria-label", muted ? "取消静音" : "静音");
+    this.muteButton.setAttribute("aria-label", t(muted ? "unmute" : "mute"));
     this.volumeSlider.value = String(this.video.muted ? 0 : this.video.volume);
     this.volumeSlider.style.setProperty("--played", `${Number(this.volumeSlider.value) * 100}%`);
   }
@@ -269,7 +273,7 @@ export class VideoPlayer {
   seekBy(seconds) {
     if (!Number.isFinite(this.video.duration)) return;
     this.video.currentTime = Math.max(0, Math.min(this.video.duration, this.video.currentTime + seconds));
-    const feedback = $(seconds > 0 ? "seekFeedbackForward" : "seekFeedbackBack");
+    const feedback = getById(seconds > 0 ? "seekFeedbackForward" : "seekFeedbackBack");
     feedback.classList.remove("show");
     void feedback.offsetWidth;
     feedback.classList.add("show");
@@ -308,10 +312,10 @@ export class VideoPlayer {
       } else if (this.video.webkitEnterFullscreen) {
         this.video.webkitEnterFullscreen();
       } else {
-        this.showNotice("当前浏览器不支持网页全屏。", 2200);
+        this.showNotice(t("fullscreenUnsupported"), 2200);
       }
     } catch {
-      this.showNotice("浏览器没有允许进入全屏。", 2200);
+      this.showNotice(t("fullscreenDenied"), 2200);
     }
     motionPermission.catch(() => {});
   }
@@ -321,7 +325,7 @@ export class VideoPlayer {
       if (document.fullscreenElement) await document.exitFullscreen();
       else if (document.webkitFullscreenElement) await document.webkitExitFullscreen();
     } catch {
-      this.showNotice("可以按 Esc 退出全屏。", 2000);
+      this.showNotice(t("fullscreenEscapeHint"), 2000);
     }
   }
 
@@ -329,7 +333,7 @@ export class VideoPlayer {
   handleFullscreenChange() {
     const isFullscreen = document.fullscreenElement === this.shell || document.webkitFullscreenElement === this.shell;
     setButtonIcon(this.fullscreenButton, isFullscreen ? "fullscreen-exit" : "fullscreen");
-    this.fullscreenButton.setAttribute("aria-label", isFullscreen ? "退出全屏" : "进入全屏");
+    this.fullscreenButton.setAttribute("aria-label", t(isFullscreen ? "exitFullscreen" : "enterFullscreen"));
     this.floatingExit.hidden = !isFullscreen;
 
     window.clearTimeout(this.hintTimer);
@@ -522,6 +526,17 @@ export class VideoPlayer {
       event.preventDefault();
       this.toggleMute();
     }
+  }
+
+  /** Re-label stateful controls immediately after the global language changes. */
+  updateLanguage() {
+    if (!this.active) this.title.textContent = t("video");
+    this.setMirrored(this.isMirrored);
+    this.updatePlaybackUi();
+    this.updateVolumeUi();
+    this.updateProgressUi();
+    const isFullscreen = this.isPlayerFullscreen();
+    this.fullscreenButton.setAttribute("aria-label", t(isFullscreen ? "exitFullscreen" : "enterFullscreen"));
   }
 
   showNotice(message, duration = 0) {
