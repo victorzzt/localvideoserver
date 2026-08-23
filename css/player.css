@@ -20,10 +20,21 @@
   margin-bottom: 16px;
 }
 
-.player-back {
+.player-back,
+.player-mirror {
   flex: 0 0 auto;
   background: rgba(255, 255, 255, 0.055);
   color: var(--text);
+}
+
+.player-mirror {
+  margin-left: auto;
+}
+
+.player-mirror[aria-pressed="true"] {
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.13);
+  color: #fff;
 }
 
 .player-heading-copy {
@@ -117,6 +128,11 @@
   height: 100%;
   background: #000;
   object-fit: contain;
+}
+
+/* Mirror video pixels without reversing controls, gestures, or overlay text. */
+.player-shell.is-mirrored video {
+  transform: scaleX(-1);
 }
 
 /* Transparent left/right regions receive single- and double-tap gestures. */

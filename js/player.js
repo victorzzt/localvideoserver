@@ -20,6 +20,7 @@ export class VideoPlayer {
     this.video = $("videoPlayer");
     this.title = $("playerTitle");
     this.backButton = $("backButton");
+    this.mirrorButton = $("mirrorButton");
     this.centerPlayButton = $("centerPlayButton");
     this.playPauseButton = $("playPauseButton");
     this.muteButton = $("muteButton");
@@ -43,6 +44,7 @@ export class VideoPlayer {
     this.motionPermissionRequested = false;
     this.gravityRotation = null;
     this.currentMobileRotation = 90;
+    this.isMirrored = false;
 
     this.bindEvents();
     this.updatePlaybackUi();
@@ -51,6 +53,7 @@ export class VideoPlayer {
   /** Register media, control, keyboard, gesture, fullscreen, and sensor events. */
   bindEvents() {
     this.backButton.addEventListener("click", () => this.close());
+    this.mirrorButton.addEventListener("click", () => this.setMirrored(!this.isMirrored));
     this.centerPlayButton.addEventListener("click", () => this.togglePlayback());
     this.playPauseButton.addEventListener("click", () => this.togglePlayback());
     this.muteButton.addEventListener("click", () => this.toggleMute());
@@ -128,6 +131,7 @@ export class VideoPlayer {
     this.view.setAttribute("aria-hidden", "false");
     document.body.classList.add("player-open");
     this.shell.classList.add("is-paused", "controls-visible");
+    this.setMirrored(false);
     this.shell.classList.remove("is-portrait-video");
     this.view.classList.remove("portrait-video-open");
     this.shell.style.removeProperty("--video-aspect-ratio");
@@ -151,6 +155,7 @@ export class VideoPlayer {
 
     this.active = false;
     this.video.pause();
+    this.setMirrored(false);
     this.video.removeAttribute("src");
     this.video.load();
     this.view.hidden = true;
@@ -175,6 +180,20 @@ export class VideoPlayer {
     } else {
       this.video.pause();
     }
+  }
+
+  /**
+   * Mirror only the video pixels along the horizontal axis. The shell class is
+   * deliberately independent of fullscreen/orientation classes, so the state
+   * lasts until `close()` or the next `open()` explicitly resets it.
+   */
+  setMirrored(mirrored) {
+    this.isMirrored = Boolean(mirrored);
+    this.shell.classList.toggle("is-mirrored", this.isMirrored);
+    this.mirrorButton.setAttribute("aria-pressed", String(this.isMirrored));
+    const label = this.isMirrored ? "取消左右镜像" : "左右镜像视频";
+    this.mirrorButton.setAttribute("aria-label", label);
+    this.mirrorButton.title = label;
   }
 
   updatePlaybackUi() {

@@ -19,6 +19,7 @@
       <symbol id="icon-fullscreen" viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5zm9 0h5v5h-2V7h-3zM5 14h2v3h3v2H5zm12 0h2v5h-5v-2h3z"/></symbol>
       <symbol id="icon-fullscreen-exit" viewBox="0 0 24 24"><path d="M8 8V5h2v5H5V8zm6-3h2v3h3v2h-5zM5 14h5v5H8v-3H5zm9 0h5v2h-3v3h-2z"/></symbol>
       <symbol id="icon-back" viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></symbol>
+      <symbol id="icon-mirror" viewBox="0 0 24 24"><path d="M11 3h2v18h-2zM9 6 3 12l6 6zm6 0v12l6-6z"/></symbol>
       <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.3L13 11h7V4z"/></symbol>
       <symbol id="icon-search" viewBox="0 0 24 24"><path d="M10.8 4a6.8 6.8 0 1 0 4.2 12.1l4 4 1.4-1.4-4-4A6.8 6.8 0 0 0 10.8 4m0 2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6"/></symbol>
       <symbol id="icon-video" viewBox="0 0 24 24"><path d="M4 6h11a2 2 0 0 1 2 2v1.5l3-2V17l-3-2V16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2m3 3v6l5-3z"/></symbol>
@@ -83,6 +84,10 @@
           <p>NOW PLAYING</p>
           <h2 id="playerTitle">视频</h2>
         </div>
+        <!-- 只镜像视频画面；本次播放期间进入或退出全屏都会保留状态。 -->
+        <button id="mirrorButton" class="icon-button player-mirror" type="button" aria-label="左右镜像视频" aria-pressed="false" title="左右镜像视频">
+          <svg aria-hidden="true"><use href="#icon-mirror"></use></svg>
+        </button>
       </header>
 
       <div id="playerShell" class="player-shell controls-visible">
