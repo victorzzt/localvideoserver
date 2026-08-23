@@ -104,9 +104,15 @@ export class VideoPlayer {
     document.addEventListener("fullscreenchange", () => this.handleFullscreenChange());
     document.addEventListener("webkitfullscreenchange", () => this.handleFullscreenChange());
     document.addEventListener("keydown", (event) => this.handleKeydown(event));
-    window.addEventListener("resize", () => this.applyMobileOrientation());
+    window.addEventListener("resize", () => {
+      this.updatePortraitPlayerSize();
+      this.applyMobileOrientation();
+    });
     window.addEventListener("orientationchange", () => {
-      window.setTimeout(() => this.applyMobileOrientation(), 120);
+      window.setTimeout(() => {
+        this.updatePortraitPlayerSize();
+        this.applyMobileOrientation();
+      }, 120);
     });
     window.addEventListener("devicemotion", (event) => this.handleDeviceMotion(event), { passive: true });
   }
@@ -122,6 +128,10 @@ export class VideoPlayer {
     this.view.setAttribute("aria-hidden", "false");
     document.body.classList.add("player-open");
     this.shell.classList.add("is-paused", "controls-visible");
+    this.shell.classList.remove("is-portrait-video");
+    this.view.classList.remove("portrait-video-open");
+    this.shell.style.removeProperty("--video-aspect-ratio");
+    this.shell.style.removeProperty("--portrait-player-width");
     this.resetMobileOrientation(false);
     this.video.src = item.url;
     this.video.load();
@@ -145,6 +155,10 @@ export class VideoPlayer {
     this.video.load();
     this.view.hidden = true;
     this.view.setAttribute("aria-hidden", "true");
+    this.shell.classList.remove("is-portrait-video");
+    this.view.classList.remove("portrait-video-open");
+    this.shell.style.removeProperty("--video-aspect-ratio");
+    this.shell.style.removeProperty("--portrait-player-width");
     document.body.classList.remove("player-open");
     window.clearTimeout(this.controlsTimer);
     window.clearTimeout(this.tapTimer);
@@ -324,9 +338,30 @@ export class VideoPlayer {
   }
 
   handleVideoMetadata() {
+    const aspectRatio = this.video.videoWidth / this.video.videoHeight;
+    const isPortraitVideo = Number.isFinite(aspectRatio) && aspectRatio < 1;
+    this.shell.classList.toggle("is-portrait-video", isPortraitVideo);
+    this.view.classList.toggle("portrait-video-open", isPortraitVideo);
+    if (Number.isFinite(aspectRatio) && aspectRatio > 0) {
+      this.shell.style.setProperty("--video-aspect-ratio", String(aspectRatio));
+    }
+    this.updatePortraitPlayerSize();
+
     if (!this.isPlayerFullscreen()) return;
     this.lockOrientationForVideo();
     this.applyMobileOrientation();
+  }
+
+  /**
+   * Fit a portrait video to phone width, shrinking it only when available
+   * viewport height would be exceeded before fullscreen.
+   */
+  updatePortraitPlayerSize() {
+    const aspectRatio = this.video.videoWidth / this.video.videoHeight;
+    if (!Number.isFinite(aspectRatio) || aspectRatio <= 0 || aspectRatio >= 1) return;
+    const availableHeight = Math.max(220, window.innerHeight - 28);
+    const width = Math.min(window.innerWidth, availableHeight * aspectRatio);
+    this.shell.style.setProperty("--portrait-player-width", `${Math.round(width)}px`);
   }
 
   async requestMotionPermission() {

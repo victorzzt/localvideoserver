@@ -487,6 +487,39 @@
   }
 }
 
+/*
+ * Before fullscreen, a portrait video on a portrait phone uses its real aspect
+ * ratio instead of the desktop 16:9 frame. Width is preferred, but extremely
+ * tall videos are capped by available viewport height so controls remain usable.
+ */
+@media (max-width: 700px) and (orientation: portrait) {
+  .player-view.portrait-video-open {
+    padding-top: max(14px, env(safe-area-inset-top));
+    padding-bottom: max(14px, env(safe-area-inset-bottom));
+  }
+
+  .player-shell.is-portrait-video:not(:fullscreen) {
+    width: min(100vw, var(--portrait-player-width, 100vw));
+    max-height: calc(100dvh - 28px);
+    aspect-ratio: var(--video-aspect-ratio, 0.5625);
+  }
+
+  .player-view.portrait-video-open .player-header {
+    position: absolute;
+    z-index: 20;
+    top: max(14px, env(safe-area-inset-top));
+    left: max(14px, env(safe-area-inset-left));
+    width: min(78vw, 540px);
+    margin: 0;
+    padding: 0;
+    text-shadow: 0 1px 8px rgba(0, 0, 0, 0.8);
+  }
+
+  .player-view.portrait-video-open .player-help {
+    display: none;
+  }
+}
+
 /* In a naturally rotating landscape viewport, let the player consume the screen. */
 @media (orientation: landscape) and (max-height: 520px) {
   .player-view {
