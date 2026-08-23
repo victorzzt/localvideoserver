@@ -1,0 +1,166 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+    <meta name="theme-color" content="#0d0e10">
+    <title>Local Video Library</title>
+    <link rel="stylesheet" href="./css/base.css">
+    <link rel="stylesheet" href="./css/video-list.css">
+    <link rel="stylesheet" href="./css/player.css">
+  </head>
+  <body>
+    <!-- SVG 图标精灵：页面按钮通过 <use> 重用这些图标，不依赖外部资源。 -->
+    <svg class="icon-sprite" aria-hidden="true">
+      <symbol id="icon-play" viewBox="0 0 24 24"><path d="M8 5.5v13l10-6.5z"/></symbol>
+      <symbol id="icon-pause" viewBox="0 0 24 24"><path d="M7 5h4v14H7zm6 0h4v14h-4z"/></symbol>
+      <symbol id="icon-volume" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zm11.5-.6v7.2a5 5 0 0 0 0-7.2zm0-3.2v2.1a7 7 0 0 1 0 9.4v2.1a9 9 0 0 0 0-13.6z"/></symbol>
+      <symbol id="icon-muted" viewBox="0 0 24 24"><path d="M4 9v6h4l5 4V5L8 9zm11.2 1.2L17 12l-1.8 1.8 1.4 1.4 1.8-1.8 1.8 1.8 1.4-1.4-1.8-1.8 1.8-1.8-1.4-1.4-1.8 1.8-1.8-1.8z"/></symbol>
+      <symbol id="icon-fullscreen" viewBox="0 0 24 24"><path d="M5 5h5v2H7v3H5zm9 0h5v5h-2V7h-3zM5 14h2v3h3v2H5zm12 0h2v5h-5v-2h3z"/></symbol>
+      <symbol id="icon-fullscreen-exit" viewBox="0 0 24 24"><path d="M8 8V5h2v5H5V8zm6-3h2v3h3v2h-5zM5 14h5v5H8v-3H5zm9 0h5v2h-3v3h-2z"/></symbol>
+      <symbol id="icon-back" viewBox="0 0 24 24"><path d="M20 11H7.8l5.6-5.6L12 4l-8 8 8 8 1.4-1.4L7.8 13H20z"/></symbol>
+      <symbol id="icon-refresh" viewBox="0 0 24 24"><path d="M17.7 6.3A8 8 0 1 0 20 12h-2a6 6 0 1 1-1.8-4.3L13 11h7V4z"/></symbol>
+      <symbol id="icon-search" viewBox="0 0 24 24"><path d="M10.8 4a6.8 6.8 0 1 0 4.2 12.1l4 4 1.4-1.4-4-4A6.8 6.8 0 0 0 10.8 4m0 2a4.8 4.8 0 1 1 0 9.6 4.8 4.8 0 0 1 0-9.6"/></symbol>
+      <symbol id="icon-video" viewBox="0 0 24 24"><path d="M4 6h11a2 2 0 0 1 2 2v1.5l3-2V17l-3-2V16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2m3 3v6l5-3z"/></symbol>
+      <symbol id="icon-folder" viewBox="0 0 24 24"><path d="M3 5.5A2.5 2.5 0 0 1 5.5 3H10l2 2h6.5A2.5 2.5 0 0 1 21 7.5v9a2.5 2.5 0 0 1-2.5 2.5h-13A2.5 2.5 0 0 1 3 16.5zm2.5-.5a.5.5 0 0 0-.5.5V7h14a.5.5 0 0 0-.5-.5h-7.3l-2-2zM5 9v7.5a.5.5 0 0 0 .5.5h13a.5.5 0 0 0 .5-.5V9z"/></symbol>
+      <symbol id="icon-chevron-down" viewBox="0 0 24 24"><path d="m6.6 8.6 5.4 5.4 5.4-5.4 1.4 1.4-6.8 6.8L5.2 10z"/></symbol>
+    </svg>
+
+    <!-- 视频库页面外壳。打开播放器时仍保留在背景中，以便关闭后恢复位置。 -->
+    <div class="app-shell">
+      <!-- 固定顶部栏：品牌、客户端搜索和手动重新扫描入口。 -->
+      <header class="topbar">
+        <a class="brand" href="./videolist.html" aria-label="返回视频库顶部">
+          <span class="brand-mark"><span></span></span>
+          <span class="brand-name">LOCAL<span>VIDEO</span></span>
+        </a>
+
+        <label class="search-box" for="videoSearch">
+          <svg aria-hidden="true"><use href="#icon-search"></use></svg>
+          <input id="videoSearch" type="search" placeholder="搜索本地视频" autocomplete="off">
+        </label>
+
+        <button class="icon-button refresh-button" id="refreshButton" type="button" aria-label="重新扫描目录" title="重新扫描目录">
+          <svg aria-hidden="true"><use href="#icon-refresh"></use></svg>
+        </button>
+      </header>
+
+      <main id="libraryView" class="library-view">
+        <!-- 当前虚拟目录路径与目录扫描状态；路径按钮点击后返回上一级。 -->
+        <section class="library-heading" aria-label="目录位置与扫描状态">
+          <button id="directoryLabel" class="directory-label" type="button" title="返回上一级目录">
+            <svg aria-hidden="true"><use href="#icon-folder"></use></svg>
+            <span id="directoryLabelText">/</span>
+          </button>
+          <div id="scanStatus" class="scan-status" role="status" aria-live="polite">
+            <span class="status-dot"></span>
+            <span>正在扫描…</span>
+          </div>
+        </section>
+
+        <section aria-label="本地视频">
+          <!-- JS 将文件夹卡片和视频卡片动态插入此网格。 -->
+          <div id="videoGrid" class="video-grid" aria-live="polite"></div>
+
+          <!-- 无视频、无搜索结果或扫描失败时共用的状态区域。 -->
+          <div id="emptyState" class="empty-state" hidden>
+            <span class="empty-icon"><svg aria-hidden="true"><use href="#icon-video"></use></svg></span>
+            <h2 id="emptyTitle">没有找到 MP4 视频</h2>
+            <p id="emptyMessage">把视频放进当前目录或子目录，然后重新扫描。</p>
+            <button id="emptyRetryButton" class="secondary-button" type="button">重新扫描</button>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <!-- 全屏式播放器视图；默认隐藏，点击视频卡片后由 player.js 打开。 -->
+    <section id="playerView" class="player-view" aria-label="视频播放器" aria-hidden="true" hidden>
+      <header class="player-header">
+        <button id="backButton" class="icon-button player-back" type="button" aria-label="返回视频列表">
+          <svg aria-hidden="true"><use href="#icon-back"></use></svg>
+        </button>
+        <div class="player-heading-copy">
+          <p>NOW PLAYING</p>
+          <h2 id="playerTitle">视频</h2>
+        </div>
+      </header>
+
+      <div id="playerShell" class="player-shell controls-visible">
+        <!--
+          视频、手势层和控制条放在同一个旋转容器内。
+          手机系统锁定竖屏时，player.js 可整体旋转此容器而保持交互方向一致。
+        -->
+        <div id="playerRotationSurface" class="player-rotation-surface">
+          <video id="videoPlayer" preload="metadata" playsinline></video>
+
+        <!-- 左右透明手势区：单点显示控制条，双点后退/快进 10 秒。 -->
+        <div class="gesture-zone gesture-zone-left" data-seek-direction="backward" aria-hidden="true"></div>
+        <div class="gesture-zone gesture-zone-right" data-seek-direction="forward" aria-hidden="true"></div>
+
+        <div id="seekFeedbackBack" class="seek-feedback seek-feedback-left" aria-hidden="true">
+          <span>−10</span><small>秒</small>
+        </div>
+        <div id="seekFeedbackForward" class="seek-feedback seek-feedback-right" aria-hidden="true">
+          <span>+10</span><small>秒</small>
+        </div>
+
+        <button id="centerPlayButton" class="center-play" type="button" aria-label="播放">
+          <svg aria-hidden="true"><use href="#icon-play"></use></svg>
+        </button>
+
+        <div id="playerSpinner" class="player-spinner" aria-label="正在加载" hidden></div>
+        <p id="playerNotice" class="player-notice" role="status" hidden></p>
+
+        <button id="floatingExitFullscreen" class="floating-exit-fullscreen" type="button" aria-label="退出全屏" hidden>
+          <svg aria-hidden="true"><use href="#icon-fullscreen-exit"></use></svg>
+          <span>退出全屏</span>
+        </button>
+
+        <div id="fullscreenGestureHint" class="fullscreen-gesture-hint" aria-hidden="true">
+          <span class="three-finger-mark"><i></i><i></i><i></i></span>
+          <span>三指下滑退出全屏</span>
+          <svg><use href="#icon-chevron-down"></use></svg>
+        </div>
+
+          <!-- 自定义播放控制：时间轴、播放、时间、音量和全屏。 -->
+          <div class="player-controls" id="playerControls">
+          <label class="timeline-wrap" for="timeline">
+            <span class="sr-only">视频进度</span>
+            <input id="timeline" class="timeline" type="range" min="0" max="1000" value="0" step="1">
+          </label>
+
+          <div class="control-row">
+            <button id="playPauseButton" class="control-button" type="button" aria-label="播放">
+              <svg aria-hidden="true"><use href="#icon-play"></use></svg>
+            </button>
+            <span id="timeDisplay" class="time-display">0:00 / 0:00</span>
+
+            <div class="control-spacer"></div>
+
+            <div class="volume-control">
+              <button id="muteButton" class="control-button" type="button" aria-label="静音">
+                <svg aria-hidden="true"><use href="#icon-volume"></use></svg>
+              </button>
+              <label for="volumeSlider" class="sr-only">音量</label>
+              <input id="volumeSlider" class="volume-slider" type="range" min="0" max="1" value="1" step="0.05">
+            </div>
+
+            <button id="fullscreenButton" class="control-button" type="button" aria-label="进入全屏">
+              <svg aria-hidden="true"><use href="#icon-fullscreen"></use></svg>
+            </button>
+          </div>
+          </div>
+        </div>
+      </div>
+
+      <p class="player-help">双击 / 双点左、右侧可后退或快进 10 秒</p>
+    </section>
+
+    <!-- JavaScript 被禁用时给出可见提示。 -->
+    <noscript>
+      <div class="no-script">这个页面需要 JavaScript 才能读取目录并生成视频预览。</div>
+    </noscript>
+
+    <script type="module" src="./js/app.js"></script>
+  </body>
+</html>

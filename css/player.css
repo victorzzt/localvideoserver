@@ -1,0 +1,508 @@
+/* ===== Full-window player view and heading ===== */
+.player-view {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: flex;
+  overflow: auto;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  padding: max(24px, env(safe-area-inset-top)) max(22px, env(safe-area-inset-right)) max(22px, env(safe-area-inset-bottom)) max(22px, env(safe-area-inset-left));
+  background: #0a0b0c;
+}
+
+.player-header {
+  display: flex;
+  width: min(1180px, 100%);
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.player-back {
+  flex: 0 0 auto;
+  background: rgba(255, 255, 255, 0.055);
+  color: var(--text);
+}
+
+.player-heading-copy {
+  min-width: 0;
+}
+
+.player-heading-copy p {
+  margin: 0 0 3px;
+  color: var(--faint);
+  font-size: 0.58rem;
+  font-weight: 750;
+  letter-spacing: 0.16em;
+}
+
+.player-heading-copy h2 {
+  overflow: hidden;
+  margin: 0;
+  font-size: 0.91rem;
+  font-weight: 520;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.player-shell {
+  position: relative;
+  isolation: isolate;
+  overflow: hidden;
+  width: min(1180px, 100%);
+  aspect-ratio: 16 / 9;
+  max-height: calc(100vh - 148px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 13px;
+  background: #000;
+  box-shadow: 0 28px 90px rgba(0, 0, 0, 0.42);
+  cursor: none;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.player-shell.controls-visible,
+.player-shell.is-paused {
+  cursor: default;
+}
+
+/* Native Fullscreen API sizing (standard and WebKit variants). */
+.player-shell:fullscreen {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+
+.player-shell:-webkit-full-screen {
+  width: 100vw;
+  height: 100vh;
+  max-height: none;
+  border: 0;
+  border-radius: 0;
+  aspect-ratio: auto;
+}
+
+/*
+ * Video and controls share this surface. When a phone is physically landscape
+ * but the OS locks the viewport to portrait, player.js rotates the whole layer.
+ */
+.player-rotation-surface {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  background: #000;
+  transform-origin: center;
+}
+
+.player-shell.force-mobile-rotation .player-rotation-surface {
+  inset: auto;
+  top: 50%;
+  left: 50%;
+  width: 100vh;
+  width: 100dvh;
+  height: 100vw;
+  height: 100dvw;
+  transform: translate(-50%, -50%) rotate(var(--mobile-video-rotation, 90deg));
+}
+
+.player-shell video {
+  display: block;
+  width: 100%;
+  height: 100%;
+  background: #000;
+  object-fit: contain;
+}
+
+/* Transparent left/right regions receive single- and double-tap gestures. */
+.gesture-zone {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  bottom: 68px;
+  width: 42%;
+}
+
+.gesture-zone-left { left: 0; }
+.gesture-zone-right { right: 0; }
+
+.center-play {
+  position: absolute;
+  z-index: 6;
+  inset: 50% auto auto 50%;
+  display: grid;
+  width: clamp(54px, 6vw, 72px);
+  height: clamp(54px, 6vw, 72px);
+  padding: 0;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 50%;
+  background: rgba(17, 18, 20, 0.76);
+  color: white;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -48%) scale(0.92);
+  backdrop-filter: blur(12px);
+  cursor: pointer;
+  transition: opacity 160ms ease, transform 160ms ease;
+}
+
+.center-play svg {
+  width: 35%;
+  height: 35%;
+  margin-left: 4%;
+  fill: currentColor;
+}
+
+.player-shell.is-paused .center-play,
+.player-shell.controls-visible.is-paused .center-play {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* ===== Bottom playback controls and timeline ===== */
+.player-controls {
+  position: absolute;
+  z-index: 8;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  padding: 54px clamp(12px, 2.2vw, 26px) max(12px, env(safe-area-inset-bottom));
+  background: linear-gradient(transparent, rgba(0, 0, 0, 0.82));
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.player-shell.controls-visible .player-controls,
+.player-shell.is-paused .player-controls,
+.player-controls:focus-within {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.timeline-wrap {
+  display: flex;
+  height: 18px;
+  align-items: center;
+  cursor: pointer;
+}
+
+.timeline,
+.volume-slider {
+  height: 4px;
+  margin: 0;
+  border: 0;
+  border-radius: 999px;
+  outline: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: linear-gradient(to right,
+    rgba(255, 255, 255, 0.96) 0 var(--played, 0%),
+    rgba(255, 255, 255, 0.32) var(--played, 0%) var(--buffered, 0%),
+    rgba(255, 255, 255, 0.16) var(--buffered, 0%) 100%);
+  cursor: pointer;
+}
+
+.timeline {
+  width: 100%;
+}
+
+.volume-slider {
+  background: linear-gradient(to right,
+    rgba(255, 255, 255, 0.9) 0 var(--played, 100%),
+    rgba(255, 255, 255, 0.18) var(--played, 100%) 100%);
+}
+
+.timeline::-webkit-slider-thumb,
+.volume-slider::-webkit-slider-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.1);
+}
+
+.timeline::-moz-range-thumb,
+.volume-slider::-moz-range-thumb {
+  width: 12px;
+  height: 12px;
+  border: 0;
+  border-radius: 50%;
+  background: #fff;
+}
+
+.timeline-wrap:hover .timeline {
+  height: 5px;
+}
+
+.control-row {
+  display: flex;
+  height: 38px;
+  align-items: center;
+  gap: 5px;
+}
+
+.control-button {
+  width: 38px;
+  height: 38px;
+  flex: 0 0 auto;
+  color: #f4f4f4;
+}
+
+.control-button:hover {
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.time-display {
+  margin-left: 3px;
+  color: rgba(255, 255, 255, 0.84);
+  font-variant-numeric: tabular-nums;
+  font-size: clamp(0.65rem, 1.5vw, 0.75rem);
+  white-space: nowrap;
+}
+
+.control-spacer {
+  flex: 1;
+}
+
+.volume-control {
+  display: flex;
+  align-items: center;
+}
+
+.volume-slider {
+  width: 0;
+  opacity: 0;
+  transition: width 180ms ease, opacity 180ms ease;
+}
+
+.volume-control:hover .volume-slider,
+.volume-slider:focus {
+  width: 72px;
+  opacity: 1;
+}
+
+.seek-feedback {
+  position: absolute;
+  z-index: 5;
+  top: 50%;
+  display: flex;
+  width: clamp(72px, 11vw, 112px);
+  height: clamp(72px, 11vw, 112px);
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 50%;
+  background: rgba(0, 0, 0, 0.52);
+  color: #fff;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) scale(0.75);
+  backdrop-filter: blur(8px);
+}
+
+/* Temporary visual feedback for ±10 second seeks. */
+.seek-feedback-left { left: 13%; }
+.seek-feedback-right { right: 13%; }
+
+.seek-feedback span {
+  font-size: 1.05rem;
+  font-weight: 650;
+}
+
+.seek-feedback small {
+  margin: 3px 0 0 2px;
+  color: rgba(255, 255, 255, 0.67);
+  font-size: 0.55rem;
+}
+
+.seek-feedback.show {
+  animation: seek-feedback 520ms ease;
+}
+
+.player-spinner {
+  position: absolute;
+  z-index: 7;
+  inset: 50% auto auto 50%;
+  width: 34px;
+  height: 34px;
+  margin: -17px 0 0 -17px;
+  border: 2px solid rgba(255, 255, 255, 0.2);
+  border-top-color: rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  animation: rotate 800ms linear infinite;
+}
+
+.player-notice {
+  position: absolute;
+  z-index: 9;
+  inset: 50% auto auto 50%;
+  max-width: min(80%, 420px);
+  margin: 0;
+  padding: 11px 15px;
+  border: 1px solid rgba(255, 255, 255, 0.13);
+  border-radius: 8px;
+  background: rgba(0, 0, 0, 0.76);
+  color: #ddd;
+  font-size: 0.78rem;
+  text-align: center;
+  transform: translate(-50%, -50%);
+}
+
+/* Fullscreen always exposes a compact escape button plus a brief gesture hint. */
+.floating-exit-fullscreen {
+  position: absolute;
+  z-index: 12;
+  top: max(14px, env(safe-area-inset-top));
+  right: max(14px, env(safe-area-inset-right));
+  display: flex;
+  height: 42px;
+  align-items: center;
+  gap: 7px;
+  padding: 0 13px;
+  border: 1px solid rgba(255, 255, 255, 0.17);
+  border-radius: 999px;
+  background: rgba(8, 8, 9, 0.62);
+  color: white;
+  font-size: 0.72rem;
+  backdrop-filter: blur(10px);
+  cursor: pointer;
+}
+
+.floating-exit-fullscreen svg {
+  width: 18px;
+  height: 18px;
+  fill: currentColor;
+}
+
+.fullscreen-gesture-hint {
+  position: absolute;
+  z-index: 11;
+  top: max(16px, env(safe-area-inset-top));
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 11px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.48);
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 0.67rem;
+  opacity: 0;
+  pointer-events: none;
+  transform: translate(-50%, -10px);
+  backdrop-filter: blur(9px);
+  transition: opacity 250ms ease, transform 250ms ease;
+}
+
+.fullscreen-gesture-hint.is-visible {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
+.fullscreen-gesture-hint svg {
+  width: 14px;
+  height: 14px;
+  fill: currentColor;
+}
+
+.three-finger-mark {
+  display: flex;
+  align-items: end;
+  gap: 2px;
+  height: 14px;
+}
+
+.three-finger-mark i {
+  display: block;
+  width: 3px;
+  height: 11px;
+  border-radius: 3px;
+  background: currentColor;
+}
+
+.three-finger-mark i:nth-child(2) { height: 14px; }
+.three-finger-mark i:nth-child(3) { height: 10px; }
+
+.player-help {
+  margin: 14px 0 0;
+  color: var(--faint);
+  font-size: 0.68rem;
+  text-align: center;
+}
+
+@keyframes seek-feedback {
+  0% { opacity: 0; transform: translateY(-50%) scale(0.72); }
+  25% { opacity: 1; transform: translateY(-50%) scale(1); }
+  75% { opacity: 1; transform: translateY(-50%) scale(1); }
+  100% { opacity: 0; transform: translateY(-50%) scale(1.08); }
+}
+
+/* ===== Phone player adjustments ===== */
+@media (max-width: 700px) {
+  .player-view {
+    justify-content: center;
+    padding-right: 0;
+    padding-left: 0;
+  }
+
+  .player-header {
+    padding: 0 14px;
+  }
+
+  .player-shell {
+    border-right: 0;
+    border-left: 0;
+    border-radius: 0;
+  }
+
+  .player-help {
+    padding: 0 18px;
+  }
+
+  .volume-control {
+    display: none;
+  }
+
+  .floating-exit-fullscreen span {
+    display: none;
+  }
+
+  .floating-exit-fullscreen {
+    width: 42px;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+/* In a naturally rotating landscape viewport, let the player consume the screen. */
+@media (orientation: landscape) and (max-height: 520px) {
+  .player-view {
+    padding: 0;
+  }
+
+  .player-header,
+  .player-help {
+    display: none;
+  }
+
+  .player-shell {
+    width: 100vw;
+    height: 100vh;
+    max-height: none;
+    border: 0;
+    border-radius: 0;
+  }
+}

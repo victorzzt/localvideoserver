@@ -1,0 +1,298 @@
+/* ===== Responsive card grid shared by folders and videos ===== */
+.video-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 290px), 1fr));
+  gap: clamp(18px, 2.5vw, 30px) clamp(15px, 2vw, 28px);
+}
+
+.video-card {
+  min-width: 0;
+}
+
+.video-card-button {
+  display: block;
+  width: 100%;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.thumbnail-wrap {
+  position: relative;
+  overflow: hidden;
+  aspect-ratio: 16 / 9;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius);
+  background: #151619;
+  box-shadow: 0 14px 35px rgba(0, 0, 0, 0.13);
+  transition: transform 220ms cubic-bezier(.2,.8,.2,1), border-color 220ms ease;
+}
+
+.video-card-button:hover .thumbnail-wrap,
+.video-card-button:focus-visible .thumbnail-wrap {
+  border-color: rgba(255, 255, 255, 0.18);
+  transform: translateY(-3px);
+}
+
+/* Video frame generated in the browser by thumbnail-generator.js. */
+.thumbnail-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  opacity: 0;
+  transform: scale(1.015);
+  transition: opacity 350ms ease, transform 500ms ease;
+}
+
+.thumbnail-image.is-ready {
+  opacity: 1;
+  transform: scale(1);
+}
+
+.thumbnail-placeholder {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(110deg, transparent 28%, rgba(255, 255, 255, 0.035) 43%, transparent 58%) 0 0 / 250% 100%,
+    #151619;
+  animation: thumbnail-loading 1.8s linear infinite;
+}
+
+.thumbnail-placeholder svg {
+  width: 32px;
+  height: 32px;
+  fill: rgba(255, 255, 255, 0.16);
+}
+
+.thumbnail-wrap.has-error .thumbnail-placeholder {
+  animation: none;
+  background: #17181b;
+}
+
+.thumbnail-wrap.has-error .thumbnail-placeholder svg {
+  fill: rgba(255, 255, 255, 0.3);
+}
+
+.thumbnail-wrap.has-image .thumbnail-placeholder {
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 250ms ease;
+}
+
+/* Folder cards deliberately keep the same 16:9 footprint as video cards. */
+.folder-thumbnail {
+  display: grid;
+  place-items: center;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(255, 255, 255, 0.07), transparent 42%),
+    linear-gradient(145deg, #1b1d21, #121315);
+}
+
+.folder-visual {
+  display: grid;
+  width: clamp(68px, 25%, 94px);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.11);
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.035);
+  transition: background 180ms ease, transform 220ms cubic-bezier(.2,.8,.2,1);
+}
+
+.folder-visual svg {
+  width: 46%;
+  height: 46%;
+  fill: rgba(255, 255, 255, 0.74);
+}
+
+.folder-card .video-card-button:hover .folder-visual,
+.folder-card .video-card-button:focus-visible .folder-visual {
+  background: rgba(255, 255, 255, 0.07);
+  transform: scale(1.04);
+}
+
+.folder-type-label {
+  position: absolute;
+  top: 13px;
+  left: 14px;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.56rem;
+  font-weight: 720;
+  letter-spacing: 0.15em;
+}
+
+.folder-count {
+  min-width: auto;
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.thumbnail-play {
+  position: absolute;
+  z-index: 2;
+  inset: 50% auto auto 50%;
+  display: grid;
+  width: 46px;
+  height: 46px;
+  place-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.25);
+  border-radius: 50%;
+  background: rgba(8, 8, 9, 0.66);
+  opacity: 0;
+  transform: translate(-50%, -45%) scale(0.9);
+  backdrop-filter: blur(8px);
+  transition: opacity 180ms ease, transform 180ms ease;
+}
+
+.thumbnail-play svg {
+  width: 21px;
+  height: 21px;
+  margin-left: 2px;
+  fill: white;
+}
+
+.video-card-button:hover .thumbnail-play,
+.video-card-button:focus-visible .thumbnail-play {
+  opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
+}
+
+/* Titles and duration/count badges remain legible over every possible frame. */
+.thumbnail-title {
+  position: absolute;
+  z-index: 3;
+  bottom: 8px;
+  left: 8px;
+  overflow: hidden;
+  max-width: calc(100% - 76px);
+  margin: 0;
+  padding: 4px 7px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.76);
+  color: #fff;
+  font-size: 0.78rem;
+  font-weight: 560;
+  line-height: 1.1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  backdrop-filter: blur(5px);
+}
+
+.folder-card .thumbnail-title {
+  max-width: calc(100% - 102px);
+}
+
+.duration-badge {
+  position: absolute;
+  z-index: 3;
+  right: 8px;
+  bottom: 8px;
+  min-width: 38px;
+  padding: 3px 6px;
+  border-radius: 6px;
+  background: rgba(0, 0, 0, 0.76);
+  color: #fff;
+  font-variant-numeric: tabular-nums;
+  font-size: 0.68rem;
+  line-height: 1;
+  text-align: center;
+  backdrop-filter: blur(5px);
+}
+
+/* Shared empty/error/search-with-no-results state. */
+.empty-state {
+  display: flex;
+  min-height: 360px;
+  align-items: center;
+  flex-direction: column;
+  justify-content: center;
+  padding: 50px 20px;
+  border: 1px dashed var(--line);
+  border-radius: var(--radius);
+  text-align: center;
+}
+
+.empty-icon {
+  display: grid;
+  width: 62px;
+  height: 62px;
+  margin-bottom: 22px;
+  place-items: center;
+  border: 1px solid var(--line);
+  border-radius: 50%;
+}
+
+.empty-icon svg {
+  width: 26px;
+  height: 26px;
+  fill: var(--muted);
+}
+
+.empty-state h2 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 560;
+}
+
+.empty-state p {
+  max-width: 430px;
+  margin: 10px 0 22px;
+  color: var(--muted);
+  font-size: 0.85rem;
+  line-height: 1.65;
+}
+
+@keyframes thumbnail-loading {
+  to { background-position: -250% 0, 0 0; }
+}
+
+/* Phone portrait mode uses smaller previews in a strict two-column grid. */
+@media (max-width: 620px) and (orientation: portrait) {
+  .video-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px 10px;
+  }
+
+  .thumbnail-wrap {
+    border-radius: 9px;
+  }
+
+  .thumbnail-title {
+    right: auto;
+    bottom: 6px;
+    left: 6px;
+    max-width: calc(100% - 59px);
+    padding: 3px 5px;
+    font-size: 0.62rem;
+  }
+
+  .folder-card .thumbnail-title {
+    max-width: calc(100% - 78px);
+  }
+
+  .duration-badge {
+    right: 6px;
+    bottom: 6px;
+    min-width: 32px;
+    padding: 3px 5px;
+    font-size: 0.58rem;
+  }
+
+  .folder-visual {
+    width: 50px;
+  }
+
+  .folder-type-label {
+    top: 9px;
+    left: 10px;
+    font-size: 0.48rem;
+  }
+
+  .thumbnail-play {
+    display: none;
+  }
+}
