@@ -176,7 +176,10 @@ function showDirectory(relativePath = "", options = {}) {
 
 /** Create a fresh renderer and a Worker queue fixed at four preview requests. */
 function createVideoList() {
-  thumbnails = new ThumbnailGenerator({ concurrency: 4 });
+  thumbnails = new ThumbnailGenerator({
+    concurrency: 4,
+    checkpointToIndexedDb: setupMode,
+  });
   const list = new VideoList({
     container: elements.grid,
     emptyState: elements.emptyState,

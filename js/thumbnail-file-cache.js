@@ -106,7 +106,9 @@ export function decodeCachePayload(fileText) {
  */
 export class ThumbnailFileCache {
   constructor() {
-    this.recordsPromise = this.load();
+    // Lazy loading lets setup mode query IndexedDB before making even the
+    // optional thumbnail.cache request; normal mode triggers it on first use.
+    this.recordsPromise = null;
   }
 
   async load() {
@@ -146,6 +148,7 @@ export class ThumbnailFileCache {
   async get(url) {
     const key = cacheKeyForVideo(url);
     if (!key) return null;
+    if (!this.recordsPromise) this.recordsPromise = this.load();
     const record = (await this.recordsPromise).get(key);
     if (!record) return null;
     const blob = jpegDataUrlToBlob(record.jpeg);

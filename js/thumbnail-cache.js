@@ -2,8 +2,9 @@
  * Persistent thumbnail cache backed by IndexedDB.
  *
  * JPEG Blobs are stored directly, avoiding LocalStorage's small quota and the
- * Base64 size expansion. Records are origin-scoped, expire after 30 days, and
- * are trimmed by least-recent access to a maximum of 500 entries.
+ * Base64 size expansion. Records are origin-scoped and expire after 30 days.
+ * Normal browsing trims to 500 least-recent entries; setup mode temporarily
+ * keeps every checkpoint needed to produce the portable cache file.
  */
 
 const DATABASE_NAME = "local-video-thumbnail-cache";
@@ -48,8 +49,11 @@ function openDatabase() {
 }
 
 export class ThumbnailCache {
-  constructor() {
+  constructor({ maxEntries = MAX_ENTRIES } = {}) {
     this.databasePromise = openDatabase().catch(() => null);
+    // Setup mode keeps every scanned record as a resumable checkpoint. Normal
+    // browsing retains the bounded default so background caching stays small.
+    this.maxEntries = maxEntries;
     this.writeCount = 0;
     this.trimRunning = false;
   }
@@ -99,13 +103,13 @@ export class ThumbnailCache {
     }
   }
 
-  /** Store one generated JPEG Blob; cache errors never block card rendering. */
+  /** Store one JPEG Blob and report whether the durable write succeeded. */
   async put(url, result) {
-    if (!(result?.blob instanceof Blob) || result.verifiedFrame !== true) return;
+    if (!(result?.blob instanceof Blob) || result.verifiedFrame !== true) return false;
 
     try {
       const database = await this.databasePromise;
-      if (!database) return;
+      if (!database) return false;
       const now = Date.now();
       const transaction = database.transaction(STORE_NAME, "readwrite");
       const done = transactionDone(transaction);
@@ -121,9 +125,11 @@ export class ThumbnailCache {
       await done;
 
       this.writeCount += 1;
-      if (this.writeCount % 25 === 0) this.trim();
+      if (Number.isFinite(this.maxEntries) && this.writeCount % 25 === 0) this.trim();
+      return true;
     } catch {
       // Private browsing, quota limits, or eviction must not break the list.
+      return false;
     }
   }
 
@@ -139,7 +145,7 @@ export class ThumbnailCache {
       const done = transactionDone(transaction);
       const store = transaction.objectStore(STORE_NAME);
       const count = await requestResult(store.count());
-      let toDelete = Math.max(0, count - MAX_ENTRIES);
+      let toDelete = Math.max(0, count - this.maxEntries);
 
       if (toDelete > 0) {
         await new Promise((resolve, reject) => {

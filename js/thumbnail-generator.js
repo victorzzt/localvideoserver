@@ -276,10 +276,11 @@ async function extractFrame(url, signal) {
  *   queue.resume();
  */
 export class ThumbnailGenerator {
-  constructor({ concurrency = 4 } = {}) {
+  constructor({ concurrency = 4, checkpointToIndexedDb = false } = {}) {
     // Keep exactly four possible preview slots regardless of future callers.
     void concurrency;
     this.concurrency = MAX_CONCURRENT_PREVIEWS;
+    this.checkpointToIndexedDb = Boolean(checkpointToIndexedDb);
     this.disposed = false;
     this.paused = false;
     this.pausePromise = null;
@@ -290,7 +291,11 @@ export class ThumbnailGenerator {
     this.controllers = new Map();
     this.activeRuns = new Set();
     this.priorityUrls = new Set();
-    this.cache = new ThumbnailCache();
+    // Setup mode must survive reloads, so its checkpoint store is not trimmed
+    // to the normal 500-entry browsing limit while the build is in progress.
+    this.cache = new ThumbnailCache({
+      maxEntries: this.checkpointToIndexedDb ? Number.POSITIVE_INFINITY : undefined,
+    });
     this.fileCache = sharedThumbnailFileCache;
     this.resolvedResults = new Map();
     this.worker = null;
@@ -331,26 +336,55 @@ export class ThumbnailGenerator {
   }
 
   /**
-   * Read thumbnail.cache first, then IndexedDB. Either hit avoids an MP4 GET.
-   * Successful results are retained so setup mode can export the full set.
+   * Normal mode reads thumbnail.cache before IndexedDB. Setup mode reverses
+   * that order and imports file hits into IndexedDB as durable checkpoints.
    */
   async getCached(url) {
-    const result = await this.fileCache.get(url) || await this.cache.get(url);
+    let result;
+    if (this.checkpointToIndexedDb) {
+      result = await this.cache.get(url);
+      if (!result) {
+        result = await this.fileCache.get(url);
+        if (result && !(await this.cache.put(url, result))) {
+          throw new Error("Could not save the thumbnail checkpoint to IndexedDB");
+        }
+      }
+    } else {
+      result = await this.fileCache.get(url) || await this.cache.get(url);
+    }
     if (result) this.resolvedResults.set(url, result);
     return result;
   }
 
-  /** Save a newly generated Blob in the persistent IndexedDB cache. */
-  cacheResult(url, result) {
+  /** Save a generated Blob; setup completion requires a durable checkpoint. */
+  async cacheResult(url, result) {
+    const stored = await this.cache.put(url, result);
+    if (this.checkpointToIndexedDb && !stored) {
+      throw new Error("Could not save the thumbnail checkpoint to IndexedDB");
+    }
     if (result?.verifiedFrame === true) this.resolvedResults.set(url, result);
-    return this.cache.put(url, result);
+    return stored;
   }
 
-  /** Create a downloadable file containing only this scan's resolved videos. */
-  createCacheFile(items) {
-    const entries = items
-      .map((item) => ({ url: item.url, result: this.resolvedResults.get(item.url) }))
-      .filter((entry) => entry.result);
+  /** Create a downloadable file from durable setup checkpoints. */
+  async createCacheFile(items) {
+    let entries;
+    if (this.checkpointToIndexedDb) {
+      entries = [];
+      // Read in moderate batches: no MP4 requests occur, but thousands of
+      // simultaneous IndexedDB transactions can still stall some browsers.
+      for (let offset = 0; offset < items.length; offset += 32) {
+        const batch = await Promise.all(items.slice(offset, offset + 32).map(async (item) => ({
+          url: item.url,
+          result: await this.cache.get(item.url),
+        })));
+        entries.push(...batch.filter((entry) => entry.result));
+      }
+    } else {
+      entries = items
+        .map((item) => ({ url: item.url, result: this.resolvedResults.get(item.url) }))
+        .filter((entry) => entry.result);
+    }
     if (entries.length !== items.length) {
       return Promise.reject(new Error("Not every scanned video has a resolved thumbnail"));
     }
