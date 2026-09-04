@@ -41,6 +41,30 @@ body.player-open {
   overflow: hidden;
 }
 
+/* setup=true: a count-based line stays visible without changing the layout. */
+.setup-progress {
+  position: fixed;
+  z-index: 100;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  overflow: hidden;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.setup-progress span {
+  display: block;
+  width: 0;
+  height: 100%;
+  background: rgba(255, 255, 255, 0.78);
+  transition: width 180ms ease;
+}
+
+.setup-progress.is-complete span {
+  background: #fff;
+}
+
 button,
 input {
   color: inherit;
@@ -375,6 +399,45 @@ input:focus-visible {
   background: rgba(255, 255, 255, 0.1);
 }
 
+.secondary-button:disabled {
+  cursor: default;
+  opacity: 0.42;
+}
+
+/* Compact setup controls keep the normal library hierarchy intact. */
+.setup-panel {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  min-height: 58px;
+  margin: -12px 0 clamp(24px, 3vw, 36px);
+  padding: 9px 11px 9px 16px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.025);
+}
+
+.setup-copy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.setup-copy strong {
+  font-size: 0.76rem;
+  font-weight: 620;
+}
+
+.setup-copy span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.7rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* Fallback displayed only when JavaScript is unavailable. */
 .no-script {
   position: fixed;
@@ -424,6 +487,14 @@ input:focus-visible {
     min-height: 30px;
     padding: 0 10px;
     font-size: 0.68rem;
+  }
+
+  .setup-panel {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 10px;
+    margin-top: -8px;
+    padding: 12px;
   }
 }
 

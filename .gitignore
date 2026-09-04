@@ -36,3 +36,6 @@ npm-debug.log*
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Cache generated
+thumbnail.cache

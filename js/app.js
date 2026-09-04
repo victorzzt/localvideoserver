@@ -27,9 +27,25 @@ const elements = {
   status: document.getElementById("scanStatus"),
   directoryLabel: document.getElementById("directoryLabel"),
   directoryLabelText: document.getElementById("directoryLabelText"),
+  brandHome: document.getElementById("brandHome"),
+  setupProgress: document.getElementById("setupProgress"),
+  setupProgressBar: document.getElementById("setupProgressBar"),
+  setupPanel: document.getElementById("setupPanel"),
+  setupSummary: document.getElementById("setupSummary"),
+  downloadCacheButton: document.getElementById("downloadCacheButton"),
 };
 
 const rootUrl = new URL("./", window.location.href);
+const setupMode = new URL(window.location.href).searchParams.get("setup") === "true";
+
+document.body.classList.toggle("setup-mode", setupMode);
+elements.setupProgress.hidden = !setupMode;
+elements.setupPanel.hidden = !setupMode;
+if (setupMode) {
+  const setupHome = new URL("./videolist.html", window.location.href);
+  setupHome.searchParams.set("setup", "true");
+  elements.brandHome.href = setupHome;
+}
 
 let scanController = null;
 let thumbnails = null;
@@ -37,6 +53,11 @@ let videoList = null;
 let currentDirectory = "";
 let currentStatus = { key: "scanningEllipsis", values: {}, state: "scanning" };
 let currentScanError = null;
+let libraryLoadInProgress = false;
+let playerOpening = false;
+let scannedVideos = [];
+let setupThumbnailState = { ready: 0, processed: 0, failed: 0, total: 0, finished: false };
+let setupExportState = "idle";
 
 const player = new VideoPlayer({
   // The video source is released before onClose runs, so preview connections
@@ -50,6 +71,46 @@ function setStatus(key, state = "ready", values = {}) {
   elements.status.querySelector("span:last-child").textContent = t(key, values);
   elements.status.classList.toggle("is-scanning", state === "scanning");
   elements.status.classList.toggle("is-error", state === "error");
+}
+
+/** Render setup progress from completed thumbnails rather than elapsed time. */
+function renderSetupProgress() {
+  if (!setupMode) return;
+  const { ready, failed, total, finished } = setupThumbnailState;
+  const allReady = finished && total > 0 && ready === total && failed === 0;
+  const percentage = total > 0 ? Math.min(100, (ready / total) * 100) : 0;
+
+  elements.setupProgressBar.style.width = `${percentage}%`;
+  elements.setupProgress.setAttribute("aria-valuemax", String(total));
+  elements.setupProgress.setAttribute("aria-valuenow", String(ready));
+  elements.setupProgress.classList.toggle("is-complete", allReady);
+
+  if (setupExportState === "preparing") {
+    elements.setupSummary.textContent = t("preparingThumbnailCache");
+  } else if (setupExportState === "error") {
+    elements.setupSummary.textContent = t("thumbnailCacheDownloadFailed");
+  } else if (finished && failed > 0) {
+    elements.setupSummary.textContent = t("setupFailed", { ready, total, failed });
+  } else if (allReady) {
+    elements.setupSummary.textContent = t("setupReady", { total });
+  } else if (total > 0) {
+    elements.setupSummary.textContent = t("setupCaching", { ready, total });
+  } else {
+    elements.setupSummary.textContent = t("setupWaiting");
+  }
+
+  elements.downloadCacheButton.textContent = t(
+    setupExportState === "preparing" ? "preparingThumbnailCache" : "downloadThumbnailCache",
+  );
+  elements.downloadCacheButton.disabled = !allReady || setupExportState === "preparing";
+}
+
+/** Update the count while the four-slot queue resolves cache hits and captures. */
+function updateSetupProgress(progress, finished = false) {
+  if (!setupMode) return;
+  setupThumbnailState = { ...progress, finished };
+  setupExportState = "idle";
+  renderSetupProgress();
 }
 
 /** Refresh path affordances whose wording depends on the selected language. */
@@ -113,24 +174,42 @@ function showDirectory(relativePath = "", options = {}) {
   if (scroll) window.scrollTo({ top: 0, behavior: "smooth" });
 }
 
-/** Create a fresh renderer and a Worker queue capped at four preview requests. */
+/** Create a fresh renderer and a Worker queue fixed at four preview requests. */
 function createVideoList() {
   thumbnails = new ThumbnailGenerator({ concurrency: 4 });
-  videoList = new VideoList({
+  const list = new VideoList({
     container: elements.grid,
     emptyState: elements.emptyState,
     emptyTitle: elements.emptyTitle,
     emptyMessage: elements.emptyMessage,
     retryButton: elements.retryButton,
     thumbnailGenerator: thumbnails,
-    onPlay: (item, trigger) => {
-      thumbnails?.pause();
-      player.open(item, trigger);
+    playbackEnabled: !setupMode,
+    onThumbnailProgress: (progress) => {
+      if (videoList === list) updateSetupProgress(progress, false);
+    },
+    onThumbnailsComplete: (progress) => {
+      if (videoList !== list) return;
+      const allReady = progress.total > 0 && progress.ready === progress.total && progress.failed === 0;
+      list.setPlaybackEnabled(!setupMode || allReady);
+      updateSetupProgress(progress, true);
+    },
+    onPlay: async (item, trigger) => {
+      if (playerOpening || player.active) return;
+      playerOpening = true;
+      const activeQueue = thumbnails;
+      try {
+        await activeQueue?.pause();
+        if (activeQueue === thumbnails) player.open(item, trigger);
+      } finally {
+        playerOpening = false;
+      }
     },
     onOpenDirectory: (directory) => {
       showDirectory(directory.relativePath);
     },
   });
+  videoList = list;
 }
 
 /**
@@ -138,18 +217,29 @@ function createVideoList() {
  * resulting folder/video cards. Call this after files change on the server.
  */
 async function loadLibrary() {
+  if (libraryLoadInProgress) return;
+  libraryLoadInProgress = true;
+  elements.refreshButton.classList.add("is-spinning");
+  elements.refreshButton.disabled = true;
+  currentScanError = null;
+  scannedVideos = [];
+  if (setupMode) {
+    setupThumbnailState = { ready: 0, processed: 0, failed: 0, total: 0, finished: false };
+    setupExportState = "idle";
+    renderSetupProgress();
+  }
+  setStatus("scanningDirectory", "scanning");
+
   scanController?.abort();
   videoList?.destroy();
-  thumbnails?.dispose();
+  const previousThumbnails = thumbnails;
+  thumbnails = null;
+  await previousThumbnails?.dispose();
   scanController = new AbortController();
   createVideoList();
 
   elements.grid.hidden = false;
   elements.emptyState.hidden = true;
-  elements.refreshButton.classList.add("is-spinning");
-  elements.refreshButton.disabled = true;
-  currentScanError = null;
-  setStatus("scanningDirectory", "scanning");
 
   try {
     const result = await scanVideoDirectory(rootUrl, {
@@ -161,6 +251,7 @@ async function loadLibrary() {
       },
     });
 
+    scannedVideos = result.videos;
     videoList.render(result.videos, result.directories);
     if (currentDirectory && !result.directories.some((item) => item.relativePath === currentDirectory)) {
       showDirectory("", { historyMode: "replace", scroll: false });
@@ -178,10 +269,49 @@ async function loadLibrary() {
     videoList.showError(localizedScanError(error));
     setStatus("scanFailed", "error");
   } finally {
+    libraryLoadInProgress = false;
     if (!scanController.signal.aborted) {
       elements.refreshButton.classList.remove("is-spinning");
       elements.refreshButton.disabled = false;
     }
+  }
+}
+
+/** Build the obfuscated cache only after every video in this scan is ready. */
+async function downloadThumbnailCache() {
+  const { ready, failed, total, finished } = setupThumbnailState;
+  if (
+    !setupMode ||
+    !finished ||
+    total === 0 ||
+    ready !== total ||
+    failed > 0 ||
+    setupExportState === "preparing"
+  ) {
+    return;
+  }
+
+  const activeGenerator = thumbnails;
+  setupExportState = "preparing";
+  renderSetupProgress();
+  elements.refreshButton.disabled = true;
+
+  try {
+    const file = await activeGenerator.createCacheFile(scannedVideos);
+    if (activeGenerator !== thumbnails) return;
+    const downloadUrl = URL.createObjectURL(file);
+    const link = document.createElement("a");
+    link.href = downloadUrl;
+    link.download = "thumbnail.cache";
+    link.click();
+    window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+    setupExportState = "idle";
+  } catch (error) {
+    console.error("Could not create thumbnail.cache:", error);
+    setupExportState = "error";
+  } finally {
+    if (!libraryLoadInProgress) elements.refreshButton.disabled = false;
+    renderSetupProgress();
   }
 }
 
@@ -194,20 +324,23 @@ elements.directoryLabel.addEventListener("click", () => {
 });
 elements.refreshButton.addEventListener("click", loadLibrary);
 elements.retryButton.addEventListener("click", loadLibrary);
+elements.downloadCacheButton.addEventListener("click", downloadThumbnailCache);
 window.addEventListener("popstate", () => {
   showDirectory(readDirectoryFromAddress(), { historyMode: "none" });
 });
 window.addEventListener("beforeunload", () => {
   scanController?.abort();
-  thumbnails?.dispose();
+  void thumbnails?.dispose();
 });
 window.addEventListener("languagechange", () => {
   updateDirectoryLabel();
   setStatus(currentStatus.key, currentStatus.state, currentStatus.values);
   videoList?.updateLanguage();
   player.updateLanguage();
+  renderSetupProgress();
   if (currentScanError) videoList?.showError(localizedScanError(currentScanError));
 });
 
 showDirectory(readDirectoryFromAddress(), { historyMode: "replace", scroll: false });
+renderSetupProgress();
 loadLibrary();

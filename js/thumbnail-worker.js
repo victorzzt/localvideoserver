@@ -6,10 +6,11 @@
  * frame capture. At most four `run` messages can be outstanding at once.
  */
 
-let concurrency = 4;
+const CONCURRENCY = 4;
 let paused = false;
 let sealed = false;
 let finished = false;
+let priorityTransition = false;
 const pending = [];
 const active = new Map();
 let priorityIds = new Set();
@@ -29,16 +30,28 @@ function requestCancellation(id) {
 /** Free occupied slots when newly queued current-folder work is waiting. */
 function preemptForPriority() {
   if (!pending.some((task) => priorityIds.has(task.id))) return;
+  let hasOldActiveTask = false;
   for (const [id] of active) {
-    if (!priorityIds.has(id)) requestCancellation(id);
+    if (!priorityIds.has(id)) {
+      hasOldActiveTask = true;
+      requestCancellation(id);
+    }
   }
+  if (hasOldActiveTask) priorityTransition = true;
+}
+
+/** Keep dispatch stopped until every connection from the old scope has settled. */
+function updatePriorityTransition() {
+  if (!priorityTransition) return;
+  const hasOldActiveTask = [...active.keys()].some((id) => !priorityIds.has(id));
+  if (!hasOldActiveTask) priorityTransition = false;
 }
 
 /** Dispatch work until the configured connection/decode limit is reached. */
 function pump() {
-  if (paused || finished) return;
+  if (paused || priorityTransition || finished) return;
 
-  while (active.size < concurrency && pending.length > 0) {
+  while (active.size < CONCURRENCY && pending.length > 0) {
     const task = pending.shift();
     active.set(task.id, task);
     self.postMessage({ type: "run", id: task.id, url: task.url });
@@ -63,6 +76,7 @@ function handleCancelled(id) {
   cancellationRequested.delete(id);
   pending.push(task);
   sortPendingByPriority();
+  updatePriorityTransition();
   pump();
 }
 
@@ -71,7 +85,6 @@ self.addEventListener("message", (event) => {
 
   switch (message.type) {
     case "init":
-      concurrency = Math.max(1, Math.min(4, Number(message.concurrency) || 4));
       pump();
       break;
 
@@ -88,11 +101,10 @@ self.addEventListener("message", (event) => {
     case "prioritize": {
       priorityIds = new Set(message.ids || []);
       sortPendingByPriority();
-      const hasWaitingPriority = pending.some((task) => priorityIds.has(task.id));
-      if (hasWaitingPriority) {
-        for (const [id] of active) {
-          if (!priorityIds.has(id)) requestCancellation(id);
-        }
+      const oldActiveIds = [...active.keys()].filter((id) => !priorityIds.has(id));
+      priorityTransition = oldActiveIds.length > 0;
+      for (const id of oldActiveIds) {
+        requestCancellation(id);
       }
       pump();
       break;
@@ -118,6 +130,7 @@ self.addEventListener("message", (event) => {
       active.delete(message.id);
       priorityIds.delete(message.id);
       cancellationRequested.delete(message.id);
+      updatePriorityTransition();
       pump();
       break;
 

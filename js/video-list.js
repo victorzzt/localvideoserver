@@ -30,6 +30,9 @@ export class VideoList {
     thumbnailGenerator,
     onPlay,
     onOpenDirectory,
+    playbackEnabled = true,
+    onThumbnailProgress,
+    onThumbnailsComplete,
   }) {
     this.container = container;
     this.emptyState = emptyState;
@@ -39,15 +42,20 @@ export class VideoList {
     this.thumbnailGenerator = thumbnailGenerator;
     this.onPlay = onPlay;
     this.onOpenDirectory = onOpenDirectory;
+    this.playbackEnabled = playbackEnabled;
+    this.onThumbnailProgress = onThumbnailProgress;
+    this.onThumbnailsComplete = onThumbnailsComplete;
     this.items = [];
     this.directories = [];
     this.cards = new Map();
     this.filterText = "";
     this.scopePath = "";
+    this.destroyed = false;
   }
 
   /** Replace all cards, prioritize the current folder, then hydrate every preview. */
   render(items, directories = []) {
+    this.destroyed = false;
     this.releaseObjectUrls();
     this.container.replaceChildren();
     this.cards.clear();
@@ -68,14 +76,25 @@ export class VideoList {
     }
 
     this.updateThumbnailPriority();
-    this.hydrateAll(items);
+    void this.hydrateAll(items);
     this.applyFilter();
   }
 
-  /** Cache-check all cards in parallel and seal the Worker after all work settles. */
+  /** Cache-check every card and report file-wide progress for setup mode. */
   async hydrateAll(items) {
-    await Promise.allSettled(items.map((item) => this.loadThumbnail(item)));
+    const progress = { ready: 0, processed: 0, failed: 0, total: items.length };
+    this.onThumbnailProgress?.({ ...progress });
+
+    await Promise.all(items.map(async (item) => {
+      const loaded = await this.loadThumbnail(item);
+      progress.processed += 1;
+      if (loaded) progress.ready += 1;
+      else progress.failed += 1;
+      if (!this.destroyed) this.onThumbnailProgress?.({ ...progress });
+    }));
+
     this.thumbnailGenerator.seal();
+    if (!this.destroyed) this.onThumbnailsComplete?.({ ...progress });
   }
 
   /** Build a 16:9 folder card that enters the supplied relative directory. */
@@ -119,7 +138,11 @@ export class VideoList {
     const button = document.createElement("button");
     button.className = "video-card-button";
     button.type = "button";
-    button.setAttribute("aria-label", t("playVideo", { title: item.title }));
+    button.disabled = !this.playbackEnabled;
+    button.setAttribute(
+      "aria-label",
+      t(this.playbackEnabled ? "playVideo" : "thumbnailPending", { title: item.title }),
+    );
 
     const thumbnailWrap = document.createElement("div");
     thumbnailWrap.className = "thumbnail-wrap";
@@ -146,25 +169,27 @@ export class VideoList {
 
     thumbnailWrap.append(image, placeholder, playMark, title, duration);
     button.append(thumbnailWrap);
-    button.addEventListener("click", () => this.onPlay(item, button));
+    button.addEventListener("click", () => {
+      if (this.playbackEnabled) this.onPlay(item, button);
+    });
     element.append(button);
 
-    return { element, button, image, thumbnailWrap, duration, requested: false };
+    return { element, button, image, thumbnailWrap, duration, item, requested: false };
   }
 
   /** Hydrate a single card and gracefully keep the placeholder on decode failure. */
   async loadThumbnail(item) {
     const card = this.cards.get(item.url);
-    if (!card || card.requested) return;
+    if (!card || card.requested) return false;
     card.requested = true;
 
     try {
       let result = await this.thumbnailGenerator.getCached(item.url);
       if (!result) {
         result = await this.thumbnailGenerator.enqueue(item.url);
-        this.thumbnailGenerator.cacheResult(item.url, result);
+        await this.thumbnailGenerator.cacheResult(item.url, result);
       }
-      if (this.cards.get(item.url) !== card) return;
+      if (this.cards.get(item.url) !== card) return false;
       item.duration = result.duration;
       card.duration.textContent = formatTime(result.duration);
       card.image.addEventListener("load", () => {
@@ -173,11 +198,28 @@ export class VideoList {
       }, { once: true });
       card.objectUrl = URL.createObjectURL(result.blob);
       card.image.src = card.objectUrl;
+      card.element.classList.add("is-thumbnail-ready");
+      return true;
     } catch (error) {
       if (error.name !== "AbortError" && this.cards.get(item.url) === card) {
         card.thumbnailWrap.classList.add("has-error");
         card.duration.textContent = "MP4";
       }
+      return false;
+    }
+  }
+
+  /** Lock setup-mode cards until every thumbnail in the recursive scan is ready. */
+  setPlaybackEnabled(enabled) {
+    this.playbackEnabled = Boolean(enabled);
+    for (const item of this.items) {
+      const card = this.cards.get(item.url);
+      if (!card) continue;
+      card.button.disabled = !this.playbackEnabled;
+      card.button.setAttribute(
+        "aria-label",
+        t(this.playbackEnabled ? "playVideo" : "thumbnailPending", { title: item.title }),
+      );
     }
   }
 
@@ -260,7 +302,10 @@ export class VideoList {
       card.count.textContent = t("folderVideoCount", { count: directory.videoCount });
     }
     for (const item of this.items) {
-      this.cards.get(item.url)?.button.setAttribute("aria-label", t("playVideo", { title: item.title }));
+      this.cards.get(item.url)?.button.setAttribute(
+        "aria-label",
+        t(this.playbackEnabled ? "playVideo" : "thumbnailPending", { title: item.title }),
+      );
     }
     this.applyFilter();
   }
@@ -276,6 +321,7 @@ export class VideoList {
 
   /** Drop card references before a new scan replaces the list and queue. */
   destroy() {
+    this.destroyed = true;
     this.releaseObjectUrls();
     this.cards.clear();
   }

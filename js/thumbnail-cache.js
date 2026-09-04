@@ -11,6 +11,8 @@ const DATABASE_VERSION = 1;
 const STORE_NAME = "thumbnails";
 const MAX_ENTRIES = 500;
 const MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000;
+// Version 2 invalidates previews created before decoded-frame verification.
+const CACHE_FORMAT_VERSION = 2;
 
 function requestResult(request) {
   return new Promise((resolve, reject) => {
@@ -65,7 +67,13 @@ export class ThumbnailCache {
       const store = transaction.objectStore(STORE_NAME);
       const record = await requestResult(store.get(url));
 
-      if (!record || !(record.blob instanceof Blob)) {
+      if (!record) {
+        await done;
+        return null;
+      }
+
+      if (!(record.blob instanceof Blob) || record.formatVersion !== CACHE_FORMAT_VERSION) {
+        store.delete(url);
         await done;
         return null;
       }
@@ -83,6 +91,7 @@ export class ThumbnailCache {
         blob: record.blob,
         duration: record.duration,
         capturedAt: record.capturedAt,
+        verifiedFrame: true,
         fromCache: true,
       };
     } catch {
@@ -92,7 +101,7 @@ export class ThumbnailCache {
 
   /** Store one generated JPEG Blob; cache errors never block card rendering. */
   async put(url, result) {
-    if (!(result?.blob instanceof Blob)) return;
+    if (!(result?.blob instanceof Blob) || result.verifiedFrame !== true) return;
 
     try {
       const database = await this.databasePromise;
@@ -102,6 +111,7 @@ export class ThumbnailCache {
       const done = transactionDone(transaction);
       transaction.objectStore(STORE_NAME).put({
         url,
+        formatVersion: CACHE_FORMAT_VERSION,
         blob: result.blob,
         duration: result.duration,
         capturedAt: result.capturedAt,

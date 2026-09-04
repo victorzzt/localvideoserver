@@ -6,8 +6,11 @@
 
 import { abortError } from "./utils.js";
 import { ThumbnailCache } from "./thumbnail-cache.js";
+import { sharedThumbnailFileCache } from "./thumbnail-file-cache.js";
 
-function waitForMedia(video, eventName, { timeout = 30000, signal } = {}) {
+const MAX_CONCURRENT_PREVIEWS = 4;
+
+function waitForMedia(video, eventName, { timeout = 45000, signal } = {}) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
       reject(abortError());
@@ -47,6 +50,151 @@ function waitForMedia(video, eventName, { timeout = 30000, signal } = {}) {
   });
 }
 
+function nextAnimationFrame(signal) {
+  return new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+
+    const frame = window.requestAnimationFrame(() => {
+      signal?.removeEventListener("abort", onAbort);
+      resolve();
+    });
+    const onAbort = () => {
+      window.cancelAnimationFrame(frame);
+      reject(abortError());
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+  });
+}
+
+/** Wait until the seeked frame has reached the browser's video compositor. */
+async function waitForDecodedFrame(video, targetTime, signal) {
+  if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    await waitForMedia(video, "loadeddata", { signal });
+  }
+
+  if (typeof video.requestVideoFrameCallback !== "function") {
+    await nextAnimationFrame(signal);
+    await nextAnimationFrame(signal);
+    return;
+  }
+
+  await new Promise((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(abortError());
+      return;
+    }
+
+    let callbackId = 0;
+    const cleanup = () => {
+      window.clearTimeout(timer);
+      if (callbackId && typeof video.cancelVideoFrameCallback === "function") {
+        video.cancelVideoFrameCallback(callbackId);
+      }
+      signal?.removeEventListener("abort", onAbort);
+    };
+    const onAbort = () => {
+      cleanup();
+      reject(abortError());
+    };
+    const onFrame = (_now, metadata = {}) => {
+      const mediaTime = Number(metadata.mediaTime);
+      const isTargetFrame =
+        !Number.isFinite(mediaTime) ||
+        Math.abs(mediaTime - targetTime) <= 2 ||
+        Math.abs(video.currentTime - targetTime) <= 0.1;
+      if (!video.seeking && video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA && isTargetFrame) {
+        cleanup();
+        resolve();
+        return;
+      }
+      callbackId = video.requestVideoFrameCallback(onFrame);
+    };
+    const timer = window.setTimeout(() => {
+      cleanup();
+      // Some browsers do not issue callbacks while paused. `seeked` plus
+      // HAVE_CURRENT_DATA is still safe to probe; blank detection follows.
+      resolve();
+    }, 4000);
+
+    signal?.addEventListener("abort", onAbort, { once: true });
+    callbackId = video.requestVideoFrameCallback(onFrame);
+  });
+
+  await nextAnimationFrame(signal);
+}
+
+/** Reset the media element and wait for its resource selection to be emptied. */
+async function releaseVideo(video) {
+  await new Promise((resolve) => {
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      window.clearTimeout(timer);
+      video.removeEventListener("emptied", onEmptied);
+      // Let the browser process network cancellation before freeing a slot.
+      window.setTimeout(resolve, 0);
+    };
+    const onEmptied = () => finish();
+    const timer = window.setTimeout(finish, 250);
+
+    video.addEventListener("emptied", onEmptied, { once: true });
+    video.pause();
+    video.preload = "none";
+    if ("srcObject" in video) video.srcObject = null;
+    video.removeAttribute("src");
+    video.load();
+  });
+}
+
+/** Detect an undecoded all-black canvas before it can enter persistent cache. */
+function frameLooksBlank(video) {
+  const canvas = document.createElement("canvas");
+  canvas.width = 48;
+  canvas.height = 27;
+  const context = canvas.getContext("2d", { alpha: false, willReadFrequently: true });
+  if (!context) return false;
+
+  try {
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    let visiblePixels = 0;
+    for (let index = 0; index < pixels.length; index += 4) {
+      if (pixels[index] + pixels[index + 1] + pixels[index + 2] > 30) visiblePixels += 1;
+    }
+    return visiblePixels < (pixels.length / 4) * 0.002;
+  } catch {
+    // If canvas inspection is blocked, keep the frame instead of breaking all
+    // thumbnails. Directory videos are normally same-origin and inspectable.
+    return false;
+  }
+}
+
+/** Build the preferred timestamp followed by nearby black-frame fallbacks. */
+function captureTimes(duration) {
+  const preferred = duration > 15 ? 15 : duration > 0 ? duration / 3 : 0;
+  const end = duration > 0 ? Math.max(0, duration - 0.1) : 0;
+  const candidates = [preferred, Math.min(end, preferred + 2), Math.max(0, preferred - 2)];
+  if (duration > 15) candidates.push(duration / 3);
+  return [...new Set(candidates.map((value) => Math.max(0, Math.min(end, value)).toFixed(3)))]
+    .map(Number);
+}
+
+/** Seek and wait for decoded pixels, rather than trusting `seeked` by itself. */
+async function seekToFrame(video, targetTime, signal) {
+  if (targetTime > 0.05 && Math.abs(video.currentTime - targetTime) > 0.01) {
+    const seeked = waitForMedia(video, "seeked", { signal });
+    video.currentTime = targetTime;
+    await seeked;
+  } else if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
+    await waitForMedia(video, "loadeddata", { signal });
+  }
+  await waitForDecodedFrame(video, targetTime, signal);
+}
+
 function canvasBlob(canvas, signal) {
   return new Promise((resolve, reject) => {
     if (signal?.aborted) {
@@ -74,19 +222,22 @@ async function extractFrame(url, signal) {
     await waitForMedia(video, "loadedmetadata", { signal });
     if (signal?.aborted) throw abortError();
     const duration = Number.isFinite(video.duration) ? video.duration : 0;
-    // Avoid a slow deep seek: long videos stop at 15s; short ones use one third.
-    const targetTime = duration > 15 ? 15 : duration > 0 ? duration / 3 : 0;
+    let targetTime = 0;
+    let foundUsableFrame = false;
 
-    if (targetTime > 0.05) {
+    // Retry nearby frames only when decoded pixels are effectively empty. This
+    // prevents a slow seek from permanently caching an all-black JPEG.
+    for (const candidate of captureTimes(duration)) {
       if (signal?.aborted) throw abortError();
-      const seeked = waitForMedia(video, "seeked", { signal });
-      video.currentTime = targetTime;
-      await seeked;
-    } else if (video.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-      await waitForMedia(video, "loadeddata", { signal });
+      await seekToFrame(video, candidate, signal);
+      if (!frameLooksBlank(video)) {
+        targetTime = candidate;
+        foundUsableFrame = true;
+        break;
+      }
     }
 
-    if (signal?.aborted) throw abortError();
+    if (!foundUsableFrame) throw new Error("视频帧尚未完成解码");
 
     const sourceWidth = video.videoWidth || 640;
     const sourceHeight = video.videoHeight || 360;
@@ -107,11 +258,10 @@ async function extractFrame(url, signal) {
       blob,
       duration,
       capturedAt: targetTime,
+      verifiedFrame: true,
     };
   } finally {
-    video.pause();
-    video.removeAttribute("src");
-    video.load();
+    await releaseVideo(video);
   }
 }
 
@@ -120,23 +270,29 @@ async function extractFrame(url, signal) {
  *
  * Usage:
  *   const queue = new ThumbnailGenerator({ concurrency: 4 });
- *   const { dataUrl, duration } = await queue.enqueue(videoUrl);
+ *   const { blob, duration } = await queue.enqueue(videoUrl);
  *   queue.seal();  // no more videos; Worker exits after all tasks finish
  *   queue.pause(); // abort/requeue active preview requests before playback
  *   queue.resume();
  */
 export class ThumbnailGenerator {
   constructor({ concurrency = 4 } = {}) {
-    this.concurrency = Math.max(1, Math.min(4, concurrency));
+    // Keep exactly four possible preview slots regardless of future callers.
+    void concurrency;
+    this.concurrency = MAX_CONCURRENT_PREVIEWS;
     this.disposed = false;
     this.paused = false;
+    this.pausePromise = null;
     this.sealed = false;
     this.nextTaskId = 1;
     this.tasks = new Map();
     this.taskIdsByUrl = new Map();
     this.controllers = new Map();
+    this.activeRuns = new Set();
     this.priorityUrls = new Set();
     this.cache = new ThumbnailCache();
+    this.fileCache = sharedThumbnailFileCache;
+    this.resolvedResults = new Map();
     this.worker = null;
     this.workerError = null;
 
@@ -174,14 +330,31 @@ export class ThumbnailGenerator {
     });
   }
 
-  /** Read a persistent JPEG Blob; a hit performs no request to the video URL. */
-  getCached(url) {
-    return this.cache.get(url);
+  /**
+   * Read thumbnail.cache first, then IndexedDB. Either hit avoids an MP4 GET.
+   * Successful results are retained so setup mode can export the full set.
+   */
+  async getCached(url) {
+    const result = await this.fileCache.get(url) || await this.cache.get(url);
+    if (result) this.resolvedResults.set(url, result);
+    return result;
   }
 
   /** Save a newly generated Blob in the persistent IndexedDB cache. */
   cacheResult(url, result) {
+    if (result?.verifiedFrame === true) this.resolvedResults.set(url, result);
     return this.cache.put(url, result);
+  }
+
+  /** Create a downloadable file containing only this scan's resolved videos. */
+  createCacheFile(items) {
+    const entries = items
+      .map((item) => ({ url: item.url, result: this.resolvedResults.get(item.url) }))
+      .filter((entry) => entry.result);
+    if (entries.length !== items.length) {
+      return Promise.reject(new Error("Not every scanned video has a resolved thumbnail"));
+    }
+    return this.fileCache.createFile(entries);
   }
 
   /**
@@ -206,17 +379,21 @@ export class ThumbnailGenerator {
    * Pause scheduling and abort active media elements to release server slots.
    * Aborted tasks remain unresolved and the Worker requeues them for resume().
    */
-  pause() {
-    if (this.disposed || this.paused || !this.worker) return;
+  async pause() {
+    if (this.disposed || !this.worker) return;
+    if (this.paused) return this.pausePromise;
     this.paused = true;
     this.worker.postMessage({ type: "pause" });
     for (const controller of this.controllers.values()) controller.abort();
+    this.pausePromise = Promise.allSettled([...this.activeRuns]);
+    await this.pausePromise;
   }
 
   /** Continue queued previews after the player returns to the list view. */
   resume() {
     if (this.disposed || !this.paused || !this.worker) return;
     this.paused = false;
+    this.pausePromise = null;
     this.worker.postMessage({ type: "resume" });
   }
 
@@ -225,7 +402,9 @@ export class ThumbnailGenerator {
     if (this.disposed) return;
 
     if (message.type === "run") {
-      this.runTask(message.id);
+      const activeRun = this.runTask(message.id);
+      this.activeRuns.add(activeRun);
+      activeRun.finally(() => this.activeRuns.delete(activeRun));
     } else if (message.type === "cancel") {
       this.controllers.get(message.id)?.abort();
     } else if (message.type === "drained") {
@@ -281,7 +460,7 @@ export class ThumbnailGenerator {
   }
 
   /** Terminate scheduling and reject all preview promises during a rescan/unload. */
-  dispose() {
+  async dispose() {
     if (this.disposed) return;
     this.disposed = true;
     const error = abortError();
@@ -289,8 +468,11 @@ export class ThumbnailGenerator {
     for (const task of this.tasks.values()) task.reject(error);
     this.tasks.clear();
     this.taskIdsByUrl.clear();
-    this.controllers.clear();
     this.worker?.terminate();
     this.worker = null;
+    await Promise.allSettled([...this.activeRuns]);
+    this.activeRuns.clear();
+    this.controllers.clear();
+    this.resolvedResults.clear();
   }
 }

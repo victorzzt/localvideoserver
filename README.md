@@ -18,6 +18,24 @@ The directory must be served by a web server that generates directory listings. 
 
 With npm `http-server`, run `npx http-server .` in the video directory and open `videolist.html` through the address printed by the server. Express requires both static-file serving and directory-index middleware; Apache must allow directory indexes, for example with `Options +Indexes`; nginx must enable `autoindex on` for the relevant location.
 
+## 缩略图缓存文件 / Thumbnail Cache File
+
+通过 `videolist.html?setup=true` 打开缩略图构建模式。页面会扫描最多三层目录，并以最多四个并行任务生成所有视频的缩略图；全部完成前会锁定视频播放，页面顶部的细进度条按“已缓存数量 / 视频总数”推进。完成后点击下载按钮得到 `thumbnail.cache`。
+
+Open `videolist.html?setup=true` to enter thumbnail setup mode. The page scans up to three directory levels and generates previews with no more than four concurrent tasks. Video playback remains locked until every thumbnail is ready, and the thin progress bar at the top advances by completed thumbnails rather than time. When it finishes, use the download button to obtain `thumbnail.cache`.
+
+把下载的 `thumbnail.cache` 放到 `videolist.html` 同一个目录。以后以普通方式打开页面时，会先读取这个文件中的 JPEG 缩略图，再从浏览器缓存查找，其余缺少的记录才会请求视频并按原方式生成。
+
+Place the downloaded `thumbnail.cache` beside `videolist.html`. On later normal visits, the page checks the JPEG records in this file first, then the browser cache, and only requests videos to generate records that are still missing.
+
+如果视频文件发生变化，请重新生成并替换 `thumbnail.cache`。缓存按相对文件路径匹配，因此用新视频覆盖同名文件后，旧缩略图不会自动识别内容变化。
+
+Regenerate and replace `thumbnail.cache` after changing video files. Records are matched by relative file path, so replacing a video under the same filename does not automatically invalidate its old thumbnail.
+
+缓存文件使用一个快速的对称 XOR 混淆，不提供真正的安全性。若要修改密钥，请编辑 `js/thumbnail-file-cache.js` 顶部有明确注释的 `THUMBNAIL_CACHE_CIPHER_KEY`；生成和读取文件时必须使用相同的值。
+
+The cache file uses fast symmetric XOR obfuscation and provides no real security. To change its key, edit the clearly commented `THUMBNAIL_CACHE_CIPHER_KEY` near the top of `js/thumbnail-file-cache.js`; the same value must be used when creating and reading the file.
+
 ## 使用范围 / Intended Scope
 
 这个工具在浏览器中扫描目录列表并从视频中生成预览帧，因此不适合包含大量视频的工程。视频数量较多、目录很深或文件很大时，初次加载和预览生成可能消耗较多时间、网络流量和设备资源。

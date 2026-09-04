@@ -19,6 +19,19 @@
   cursor: pointer;
 }
 
+/* In setup mode every video stays inert until the complete cache is ready. */
+body.setup-mode .video-card:not(.folder-card) .video-card-button:disabled {
+  cursor: wait;
+}
+
+body.setup-mode .video-card:not(.folder-card) .video-card-button:disabled .thumbnail-wrap {
+  transform: none;
+}
+
+body.setup-mode .video-card:not(.folder-card) .video-card-button:disabled .thumbnail-play {
+  display: none;
+}
+
 .thumbnail-wrap {
   position: relative;
   overflow: hidden;
